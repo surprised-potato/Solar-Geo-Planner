@@ -151,8 +151,8 @@ export class MapController {
     this.zoneLayerGroup = L.layerGroup().addTo(this.map);
     this.keepOutLayerGroup = L.layerGroup().addTo(this.map);
     this.tableRackLayerGroup = L.layerGroup().addTo(this.map);
-    this.roofRailLayerGroup = L.layerGroup().addTo(this.map);
     this.panelLayerGroup = L.layerGroup().addTo(this.map);
+    this.roofRailLayerGroup = L.layerGroup().addTo(this.map);
     this.tiltArrowLayerGroup = L.layerGroup().addTo(this.map);
     this.stringLinesLayerGroup = L.layerGroup().addTo(this.map);
     this.homerunLinesLayerGroup = L.layerGroup().addTo(this.map);

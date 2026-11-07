@@ -15,6 +15,7 @@ export interface PecConductorEntry {
   label: string;
   ampacity75C: number;
   approxAwg: string;
+  resistanceOhmPerKm: number;
 }
 
 export interface PecEgcEntry {
@@ -24,30 +25,30 @@ export interface PecEgcEntry {
 }
 
 /**
- * PEC Table 3.10.2.6(b)(16) Allowable Ampacities of Insulated Copper Conductors (75°C Rating)
- * Standard building wire specified for PV AC inverters and feeders: Cu THHN/THWN-2.
+ * PEC Table 3.10.2.6(b)(16) Allowable Ampacities & Resistance (PEC Chapter 9 Table 10.1.1.9)
+ * Standard building wire specified for PV AC inverters and feeders: Cu THHN/THWN-2 (75°C rating).
  */
 export const PEC_COPPER_THHN_75C: PecConductorEntry[] = [
-  { sizeMm2: 2.0, label: '2.0 mm²', ampacity75C: 20, approxAwg: '#14 AWG' },
-  { sizeMm2: 3.5, label: '3.5 mm²', ampacity75C: 25, approxAwg: '#12 AWG' },
-  { sizeMm2: 5.5, label: '5.5 mm²', ampacity75C: 35, approxAwg: '#10 AWG' },
-  { sizeMm2: 8.0, label: '8.0 mm²', ampacity75C: 50, approxAwg: '#8 AWG' },
-  { sizeMm2: 14, label: '14 mm²', ampacity75C: 65, approxAwg: '#6 AWG' },
-  { sizeMm2: 22, label: '22 mm²', ampacity75C: 85, approxAwg: '#4 AWG' },
-  { sizeMm2: 30, label: '30 mm²', ampacity75C: 100, approxAwg: '#3 AWG' },
-  { sizeMm2: 38, label: '38 mm²', ampacity75C: 115, approxAwg: '#2 AWG' },
-  { sizeMm2: 50, label: '50 mm²', ampacity75C: 130, approxAwg: '#1/0 AWG' },
-  { sizeMm2: 60, label: '60 mm²', ampacity75C: 150, approxAwg: '#2/0 AWG' },
-  { sizeMm2: 80, label: '80 mm²', ampacity75C: 175, approxAwg: '#3/0 AWG' },
-  { sizeMm2: 100, label: '100 mm²', ampacity75C: 200, approxAwg: '#4/0 AWG' },
-  { sizeMm2: 125, label: '125 mm²', ampacity75C: 230, approxAwg: '250 kcmil' },
-  { sizeMm2: 150, label: '150 mm²', ampacity75C: 255, approxAwg: '300 kcmil' },
-  { sizeMm2: 175, label: '175 mm²', ampacity75C: 285, approxAwg: '350 kcmil' },
-  { sizeMm2: 200, label: '200 mm²', ampacity75C: 310, approxAwg: '400 kcmil' },
-  { sizeMm2: 250, label: '250 mm²', ampacity75C: 355, approxAwg: '500 kcmil' },
-  { sizeMm2: 300, label: '300 mm²', ampacity75C: 395, approxAwg: '600 kcmil' },
-  { sizeMm2: 400, label: '400 mm²', ampacity75C: 460, approxAwg: '800 kcmil' },
-  { sizeMm2: 500, label: '500 mm²', ampacity75C: 520, approxAwg: '1000 kcmil' }
+  { sizeMm2: 2.0, label: '2.0 mm²', ampacity75C: 20, approxAwg: '#14 AWG', resistanceOhmPerKm: 10.1 },
+  { sizeMm2: 3.5, label: '3.5 mm²', ampacity75C: 25, approxAwg: '#12 AWG', resistanceOhmPerKm: 6.4 },
+  { sizeMm2: 5.5, label: '5.5 mm²', ampacity75C: 35, approxAwg: '#10 AWG', resistanceOhmPerKm: 3.9 },
+  { sizeMm2: 8.0, label: '8.0 mm²', ampacity75C: 50, approxAwg: '#8 AWG', resistanceOhmPerKm: 2.5 },
+  { sizeMm2: 14, label: '14 mm²', ampacity75C: 65, approxAwg: '#6 AWG', resistanceOhmPerKm: 1.55 },
+  { sizeMm2: 22, label: '22 mm²', ampacity75C: 85, approxAwg: '#4 AWG', resistanceOhmPerKm: 0.98 },
+  { sizeMm2: 30, label: '30 mm²', ampacity75C: 100, approxAwg: '#3 AWG', resistanceOhmPerKm: 0.77 },
+  { sizeMm2: 38, label: '38 mm²', ampacity75C: 115, approxAwg: '#2 AWG', resistanceOhmPerKm: 0.61 },
+  { sizeMm2: 50, label: '50 mm²', ampacity75C: 130, approxAwg: '#1/0 AWG', resistanceOhmPerKm: 0.49 },
+  { sizeMm2: 60, label: '60 mm²', ampacity75C: 150, approxAwg: '#2/0 AWG', resistanceOhmPerKm: 0.39 },
+  { sizeMm2: 80, label: '80 mm²', ampacity75C: 175, approxAwg: '#3/0 AWG', resistanceOhmPerKm: 0.31 },
+  { sizeMm2: 100, label: '100 mm²', ampacity75C: 200, approxAwg: '#4/0 AWG', resistanceOhmPerKm: 0.25 },
+  { sizeMm2: 125, label: '125 mm²', ampacity75C: 230, approxAwg: '250 kcmil', resistanceOhmPerKm: 0.21 },
+  { sizeMm2: 150, label: '150 mm²', ampacity75C: 255, approxAwg: '300 kcmil', resistanceOhmPerKm: 0.17 },
+  { sizeMm2: 175, label: '175 mm²', ampacity75C: 285, approxAwg: '350 kcmil', resistanceOhmPerKm: 0.15 },
+  { sizeMm2: 200, label: '200 mm²', ampacity75C: 310, approxAwg: '400 kcmil', resistanceOhmPerKm: 0.13 },
+  { sizeMm2: 250, label: '250 mm²', ampacity75C: 355, approxAwg: '500 kcmil', resistanceOhmPerKm: 0.105 },
+  { sizeMm2: 300, label: '300 mm²', ampacity75C: 395, approxAwg: '600 kcmil', resistanceOhmPerKm: 0.089 },
+  { sizeMm2: 400, label: '400 mm²', ampacity75C: 460, approxAwg: '800 kcmil', resistanceOhmPerKm: 0.071 },
+  { sizeMm2: 500, label: '500 mm²', ampacity75C: 520, approxAwg: '1000 kcmil', resistanceOhmPerKm: 0.059 }
 ];
 
 /**
@@ -268,5 +269,52 @@ export function sizePecDcStringWire(isc: number = 15.8, isParallel: boolean = fa
     designCurrentA: Number(designCurrentA.toFixed(1)),
     conduitLabel: '25 mmø (1") PVC/EMT',
     fullCallout: `2× ${cableMm2.toFixed(1)}mm² PV1-F (1500V DC) + 1× 6.0mm² Cu EGC`
+  };
+}
+
+/**
+ * Calculates feeder voltage drop and verifies compliance with PEC Article 2.15 (max 3% allowable, 2% optimal).
+ */
+export function calculatePecVoltageDrop(
+  ratedKw: number,
+  phase: AcPhaseType,
+  voltageV: number,
+  lengthM: number,
+  conductorMm2?: number,
+  numSets: number = 1
+): {
+  voltageDropV: number;
+  voltageDropPercent: number;
+  isCompliant: boolean;
+} {
+  const isThreePhase = phase === 'three_phase';
+  const v = Math.max(100, voltageV);
+  const len = Math.max(0, lengthM);
+  const kw = Math.max(0.1, ratedKw);
+
+  const ratedCurrentA = (kw * 1000) / (isThreePhase ? Math.sqrt(3) * v : v);
+
+  // Find conductor entry
+  let entry = PEC_COPPER_THHN_75C.find(c => c.sizeMm2 === conductorMm2);
+  if (!entry) {
+    const sizing = sizePecAcFeeder(ratedKw, phase, voltageV, 'ac_main');
+    entry = PEC_COPPER_THHN_75C.find(c => c.sizeMm2 === sizing.phaseConductorMm2) || PEC_COPPER_THHN_75C[0];
+    numSets = sizing.numSets;
+  }
+
+  const effectiveR = (entry.resistanceOhmPerKm / Math.max(1, numSets)) * (len / 1000);
+  const vDrop = isThreePhase
+    ? Math.sqrt(3) * ratedCurrentA * effectiveR
+    : 2 * ratedCurrentA * effectiveR;
+
+  const vDropPercent = Number(((vDrop / v) * 100).toFixed(2));
+  const vDropRounded = Number(vDrop.toFixed(2));
+  // PEC 2.15.1.2: Feeders should not exceed 3.0%
+  const isCompliant = vDropPercent <= 3.0;
+
+  return {
+    voltageDropV: vDropRounded,
+    voltageDropPercent: vDropPercent,
+    isCompliant
   };
 }

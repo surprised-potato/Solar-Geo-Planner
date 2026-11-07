@@ -2263,9 +2263,12 @@ export class ProjectStore {
         }
       }
 
-      // Ensure any ground mount zones have their tables initialized and populated
+      // Ensure any ground mount zones have tables and roof mount zones have rails populated
       for (const zone of this.zones.values()) {
         if (zone.config.mountType === 'ground' && (!zone.tables || zone.tables.length === 0)) {
+          this.regenerateZonePanels(zone.id, false);
+        }
+        if (zone.config.mountType === 'roof' && (!zone.rails || zone.rails.length === 0)) {
           this.regenerateZonePanels(zone.id, false);
         }
       }

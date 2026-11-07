@@ -128,6 +128,9 @@ export interface SolarSystem {
   inverterLocation?: LatLngPoint | null; // Geolocation coordinates of Inverter Power House
   inverterElevationM?: number;           // Ground elevation of Inverter Power House (meters, default 0)
   homerunRaceway?: RacewayConfig | null; // Shared system-wide homerun trunk / raceway
+  acInterconnectionLocation?: LatLngPoint | null; // Geolocation coordinates of AC Point of Common Coupling (PCC / Meter)
+  acInterconnectionElevationM?: number;          // Ground elevation of AC Interconnection Point (meters, default 0)
+  acRaceway?: RacewayConfig | null;              // AC Feeder Raceway from Inverter Station to PCC
 }
 
 export interface SolarPanelObject {
