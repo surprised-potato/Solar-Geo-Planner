@@ -80,5 +80,19 @@ npm run build
 
 ---
 
+## 🚀 Deployment & Hosting
+
+### Firebase Hosting
+Live deployment URL: **[https://solar-geo-prt.web.app](https://solar-geo-prt.web.app)** (and `https://solar-geo-prt.firebaseapp.com`)
+
+To deploy updates to Firebase:
+```bash
+npm test
+npm run build
+npx firebase-tools deploy --only hosting
+```
+
+---
+
 ## 📦 Repository
-Deployed to GitHub: [surprised-potato/Solar-Geo-Planner](https://github.com/surprised-potato/Solar-Geo-Planner)
+Source code on GitHub: [surprised-potato/Solar-Geo-Planner](https://github.com/surprised-potato/Solar-Geo-Planner)
