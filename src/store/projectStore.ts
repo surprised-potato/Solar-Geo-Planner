@@ -1,4 +1,6 @@
 import {
+  AcFeederSummary,
+  AcPhaseType,
   ArrayZone,
   DEFAULT_GROUND_CONFIG,
   DEFAULT_MODULE_MODELS,
@@ -19,22 +21,31 @@ import {
   ViewFilterState,
   ViewPresetKey,
   ZNSHINE_600W_BIFACIAL,
-  StringTraverseDirection
+  StringTraverseDirection,
+  ProjectBoqState,
+  DupaWorkItem
 } from '../types/solar';
-import { computePolygonAreaSqM } from '../geo/projection';
+import { generateBoqFromRegistryAndSld, recalculateDupaItem } from '../geo/boqCalculator';
+import { calculateGeodeticDistanceM, computePolygonAreaSqM } from '../geo/projection';
 import {
   calculateStringLimits,
   generatePanelsForZone,
   optimizeGridShift
 } from '../geo/autofill';
 import {
+  calculatePolylineLength,
   calculateStringCableLengths,
-  chainAdjacentPanels,
-  sortPanelsForStringing,
+  partitionPanelsIntoStrings,
   summarizeSystemCabling
 } from '../geo/stringCabling';
+import {
+  calculatePecVoltageDrop,
+  sizePecAcFeeder,
+  sizePecTransformer,
+  getRecommendedMdpMainBreaker
+} from '../geo/pecWireSizing';
 
-export type DrawingMode = 'none' | 'zone' | 'keepout' | 'inverter' | 'raceway';
+export type DrawingMode = 'none' | 'zone' | 'keepout' | 'inverter' | 'raceway' | 'ac_interconnection' | 'ac_raceway';
 
 const SYSTEM_COLORS = [
   '#0284c7', // Sky
@@ -59,6 +70,7 @@ export class ProjectStore {
   private systems: Map<string, SolarSystem> = new Map();
   private zones: Map<string, ArrayZone> = new Map();
   private panels: Map<string, SolarPanelObject> = new Map();
+  private boqState: ProjectBoqState | null = null;
 
   public projectName: string = 'Solar Geo Project';
 
@@ -426,6 +438,33 @@ export class ProjectStore {
     this.notify();
   }
 
+  // --- AC Interconnection (PCC / Point of Common Coupling) ---
+
+  public clearSystemAcInterconnectionLocation(systemId: string): void {
+    this.setSystemAcInterconnectionLocation(systemId, null);
+  }
+
+  public setSystemAcInterconnectionLocation(
+    systemId: string,
+    location: LatLngPoint | null,
+    elevationM?: number
+  ): void {
+    const sys = this.systems.get(systemId);
+    if (!sys) return;
+    sys.acInterconnectionLocation = location;
+    if (elevationM !== undefined) {
+      sys.acInterconnectionElevationM = elevationM;
+    }
+    this.notify();
+  }
+
+  public setSystemAcInterconnectionElevation(systemId: string, elevationM: number): void {
+    const sys = this.systems.get(systemId);
+    if (!sys) return;
+    sys.acInterconnectionElevationM = Number(elevationM) || 0;
+    this.notify();
+  }
+
   public setZoneElevationDelta(zoneId: string, elevationDeltaM: number): void {
     const zone = this.zones.get(zoneId);
     if (!zone) return;
@@ -575,6 +614,138 @@ export class ProjectStore {
     return null;
   }
 
+  // --- System AC Feeder Raceway Management ---
+
+  public setSystemAcRaceway(
+    systemId: string,
+    path: LatLngPoint[],
+    elevationChangeM: number = 0,
+    name?: string
+  ): void {
+    const sys = this.systems.get(systemId);
+    if (!sys) return;
+
+    sys.acRaceway = {
+      id: `rw_ac_${systemId}_${Date.now()}`,
+      name: name || `AC Feeder (${sys.name})`,
+      path,
+      elevationChangeM: Number(elevationChangeM) || 0,
+      systemId,
+      racewayType: 'ac_feeder'
+    };
+    this.notify();
+  }
+
+  public updateSystemAcRacewayVertices(systemId: string, path: LatLngPoint[]): void {
+    const sys = this.systems.get(systemId);
+    if (!sys || !sys.acRaceway) return;
+    sys.acRaceway.path = path;
+    this.notify();
+  }
+
+  public addSystemAcRacewayVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint): void {
+    const sys = this.systems.get(systemId);
+    if (!sys || !sys.acRaceway) return;
+    const newPath = [...sys.acRaceway.path];
+    newPath.splice(insertAfterIndex + 1, 0, point);
+    this.updateSystemAcRacewayVertices(systemId, newPath);
+  }
+
+  public deleteSystemAcRacewayVertex(systemId: string, vertexIndex: number): boolean {
+    const sys = this.systems.get(systemId);
+    if (!sys || !sys.acRaceway || sys.acRaceway.path.length <= 2) return false;
+    const newPath = sys.acRaceway.path.filter((_, idx) => idx !== vertexIndex);
+    this.updateSystemAcRacewayVertices(systemId, newPath);
+    return true;
+  }
+
+  public setSystemAcRacewayElevation(systemId: string, elevationM: number): void {
+    const sys = this.systems.get(systemId);
+    if (!sys || !sys.acRaceway) return;
+    sys.acRaceway.elevationChangeM = Number(elevationM) || 0;
+    this.notify();
+  }
+
+  public clearSystemAcRaceway(systemId: string): void {
+    const sys = this.systems.get(systemId);
+    if (!sys) return;
+    sys.acRaceway = null;
+    this.notify();
+  }
+
+  public getSystemAcRaceway(systemId?: string): RacewayConfig | null {
+    const targetSysId = systemId || this.selectedSystemId;
+    if (targetSysId) {
+      const sys = this.systems.get(targetSysId);
+      return sys?.acRaceway || null;
+    }
+    return null;
+  }
+
+  public getSystemAcFeederSummary(systemId: string): AcFeederSummary {
+    const sys = this.systems.get(systemId);
+    const phase: AcPhaseType = sys?.inverter.phase || 'three_phase';
+    const invVoltageV = sys?.inverter.acVoltage || (phase === 'single_phase' ? 230 : 400);
+    const systemVoltageV = sys?.systemVoltageV || invVoltageV;
+    const totalKw = (sys?.inverter.inverterCount || 1) * (sys?.inverter.ratedAcPowerKw || 100);
+
+    const invLoc = sys?.inverterLocation || null;
+    const invElev = sys?.inverterElevationM ?? 0;
+    const pccLoc = sys?.acInterconnectionLocation || null;
+    const pccElev = sys?.acInterconnectionElevationM ?? 0;
+
+    const directDist = (invLoc && pccLoc)
+      ? Number(calculateGeodeticDistanceM(invLoc, pccLoc).toFixed(2))
+      : 0;
+
+    const hasRaceway = !!(sys?.acRaceway && sys.acRaceway.path && sys.acRaceway.path.length >= 2);
+    const racewayLen = hasRaceway ? calculatePolylineLength(sys!.acRaceway!.path) : 0;
+    const elevDelta = Math.abs(pccElev - invElev) + (sys?.acRaceway?.elevationChangeM || 0);
+
+    const totalRunM = hasRaceway
+      ? Number((racewayLen + (sys?.acRaceway?.elevationChangeM || 0)).toFixed(2))
+      : directDist > 0
+        ? Number((directDist + elevDelta).toFixed(2))
+        : 0;
+
+    // AC feeder at tapping point runs at systemVoltageV
+    const sizing = sizePecAcFeeder(totalKw, phase, systemVoltageV, 'ac_main');
+    const vDrop = calculatePecVoltageDrop(totalKw, phase, systemVoltageV, totalRunM, sizing.phaseConductorMm2, sizing.numSets);
+
+    const xfmDesign = sizePecTransformer(totalKw, phase, invVoltageV, systemVoltageV);
+    const mdpTapType = sys?.mdpTapType || 'load_side';
+    const mdpMainBreakerA = getRecommendedMdpMainBreaker(sizing.ocpdRatingA, sys?.mdpMainBreakerA);
+
+    return {
+      systemId,
+      inverterLocation: invLoc,
+      inverterElevationM: invElev,
+      acInterconnectionLocation: pccLoc,
+      acInterconnectionElevationM: pccElev,
+      directDistanceM: directDist,
+      racewayLengthM: racewayLen,
+      elevationDeltaM: Number(elevDelta.toFixed(2)),
+      totalRunM,
+      hasRaceway,
+      phase,
+      voltageV: systemVoltageV,
+      ratedCurrentA: sizing.ratedCurrentA,
+      designCurrentA: sizing.designCurrentA,
+      conductorCallout: sizing.fullCallout,
+      conduitCallout: sizing.conduitLabel,
+      voltageDropV: vDrop.voltageDropV,
+      voltageDropPercent: vDrop.voltageDropPercent,
+      isCompliant: vDrop.isCompliant,
+      inverterVoltageV: invVoltageV,
+      systemVoltageV,
+      hasTransformer: xfmDesign.required,
+      transformerKva: xfmDesign.kvaRating,
+      hasAcCombiner: sys?.hasAcCombiner !== false,
+      mdpTapType,
+      mdpMainBreakerA
+    };
+  }
+
   public getStringCables(systemId?: string): StringCableLength[] {
     const isAll = systemId === 'all';
     const targetSysId = isAll ? null : (systemId || this.selectedSystemId);
@@ -704,7 +875,7 @@ export class ProjectStore {
       warnings.push(`Warning: ${customModulesPerString} panels/string is below min MPPT voltage limit (${limits.minPanelsPerString} panels).`);
     }
 
-    // Form strings respecting array boundaries (strings never mix arrays across systems)
+    // Form strings respecting array boundaries and physical subarray/block boundaries
     const stringGroups: SolarPanelObject[][] = [];
 
     // Group 1: Roof mount zones in this system (form strings strictly within each array)
@@ -713,36 +884,19 @@ export class ProjectStore {
       const zonePanels = activePanels.filter(p => p.zoneId === roofZone.id);
       if (zonePanels.length === 0) continue;
 
-      // Serpentine order along the short side of the array (default) or user preference
       const zoneDir = direction || roofZone.config.stringTraverseDirection || this.stringTraverseDirection || 'short_side';
-      const sortedZonePanels = sortPanelsForStringing(zonePanels, roofZone.config.azimuthDeg, zoneDir);
-
-      const N = sortedZonePanels.length;
-      if (N <= limits.maxPanelsPerString) {
-        // Forms a single dedicated string within this roof array
-        stringGroups.push(chainAdjacentPanels(sortedZonePanels));
-        if (N < limits.minPanelsPerString) {
-          warnings.push(`Roof array "${roofZone.name}" has ${N} panels, which is below min MPPT voltage limit (${limits.minPanelsPerString} panels).`);
+      const part = partitionPanelsIntoStrings(
+        zonePanels,
+        roofZone.config.azimuthDeg,
+        limits,
+        {
+          customModulesPerString,
+          direction: zoneDir,
+          zoneName: roofZone.name
         }
-      } else {
-        // Divide into k balanced strings strictly within this roof array ensuring no chunk > maxPanelsPerString
-        let k = Math.max(Math.ceil(N / limits.maxPanelsPerString), Math.round(N / stringSize));
-        while (Math.ceil(N / k) > limits.maxPanelsPerString) {
-          k++;
-        }
-        const baseSize = Math.floor(N / k);
-        const remainder = N % k;
-        let offset = 0;
-        for (let i = 0; i < k; i++) {
-          const count = baseSize + (i < remainder ? 1 : 0);
-          const rawPanels = sortedZonePanels.slice(offset, offset + count);
-          offset += count;
-          stringGroups.push(chainAdjacentPanels(rawPanels));
-          if (count < limits.minPanelsPerString) {
-            warnings.push(`Roof array "${roofZone.name}" string #${i + 1} has ${count} panels, below min MPPT voltage (${limits.minPanelsPerString} panels).`);
-          }
-        }
-      }
+      );
+      stringGroups.push(...part.stringGroups);
+      warnings.push(...part.warnings);
     }
 
     // Group 2: Ground mount zones in this system (strictly within this system's arrays)
@@ -752,31 +906,18 @@ export class ProjectStore {
       if (zonePanels.length === 0) continue;
 
       const zoneDir = direction || gZone.config.stringTraverseDirection || this.stringTraverseDirection || 'short_side';
-      const sortedZonePanels = sortPanelsForStringing(zonePanels, gZone.config.azimuthDeg, zoneDir);
-      const N = sortedZonePanels.length;
-      if (N <= limits.maxPanelsPerString) {
-        stringGroups.push(chainAdjacentPanels(sortedZonePanels));
-        if (N < limits.minPanelsPerString) {
-          warnings.push(`Ground array "${gZone.name}" has ${N} panels, which is below min MPPT voltage limit (${limits.minPanelsPerString} panels).`);
+      const part = partitionPanelsIntoStrings(
+        zonePanels,
+        gZone.config.azimuthDeg,
+        limits,
+        {
+          customModulesPerString,
+          direction: zoneDir,
+          zoneName: gZone.name
         }
-      } else {
-        let k = Math.max(Math.ceil(N / limits.maxPanelsPerString), Math.round(N / stringSize));
-        while (Math.ceil(N / k) > limits.maxPanelsPerString) {
-          k++;
-        }
-        const baseSize = Math.floor(N / k);
-        const remainder = N % k;
-        let offset = 0;
-        for (let i = 0; i < k; i++) {
-          const count = baseSize + (i < remainder ? 1 : 0);
-          const rawPanels = sortedZonePanels.slice(offset, offset + count);
-          offset += count;
-          stringGroups.push(chainAdjacentPanels(rawPanels));
-          if (count < limits.minPanelsPerString) {
-            warnings.push(`Ground array "${gZone.name}" string #${i + 1} has ${count} panels, below min MPPT voltage (${limits.minPanelsPerString} panels).`);
-          }
-        }
-      }
+      );
+      stringGroups.push(...part.stringGroups);
+      warnings.push(...part.warnings);
     }
 
     const totalStrings = stringGroups.length;
@@ -2012,7 +2153,8 @@ export class ProjectStore {
       panels: this.getPanels(),
       selectedSystemId: this.selectedSystemId || undefined,
       selectedZoneId: this.selectedZoneId !== undefined ? this.selectedZoneId : undefined,
-      stringTraverseDirection: this.stringTraverseDirection
+      stringTraverseDirection: this.stringTraverseDirection,
+      boqData: this.boqState || undefined
     };
     return JSON.stringify(data, null, 2);
   }
@@ -2169,6 +2311,42 @@ export class ProjectStore {
           }
         });
       }
+
+      if (sys.acRaceway && sys.acRaceway.path && sys.acRaceway.path.length >= 2) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            type: 'AcFeederRaceway',
+            id: sys.acRaceway.id,
+            name: sys.acRaceway.name || `AC Feeder (${sys.name})`,
+            systemId: sys.id,
+            systemName: sys.name,
+            elevationChangeM: sys.acRaceway.elevationChangeM,
+            racewayType: 'ac_feeder'
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: sys.acRaceway.path.map(p => [p.lng, p.lat])
+          }
+        });
+      }
+
+      if (sys.acInterconnectionLocation) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            type: 'AcInterconnectionPCC',
+            id: `pcc_${sys.id}`,
+            systemId: sys.id,
+            systemName: sys.name,
+            elevationM: sys.acInterconnectionElevationM ?? 0
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [sys.acInterconnectionLocation.lng, sys.acInterconnectionLocation.lat]
+          }
+        });
+      }
     }
 
     return JSON.stringify(
@@ -2289,6 +2467,11 @@ export class ProjectStore {
         this.selectedZoneIds.add(this.selectedZoneId);
       }
       this.selectedPanelId = null;
+      if (data.boqData) {
+        this.boqState = data.boqData;
+      } else {
+        this.boqState = null;
+      }
       this.sanitizeStringIntegrity();
       this.notify();
       return true;
@@ -2310,7 +2493,51 @@ export class ProjectStore {
     this.selectedPanelId = null;
     this.drawingMode = 'none';
     this.stringTraverseDirection = 'short_side';
+    this.boqState = null;
     this.notify();
+  }
+
+  // --- Bill of Quantities (BOQ) & Detailed Unit Price Analysis (DUPA) Management ---
+
+  public getBoqState(systemId?: string, forceRegenerate: boolean = false): ProjectBoqState {
+    if (!this.boqState || forceRegenerate) {
+      this.boqState = generateBoqFromRegistryAndSld(this, systemId, this.boqState || undefined);
+    }
+    return this.boqState;
+  }
+
+  public syncBoqFromCad(systemId?: string, resetRates: boolean = false): ProjectBoqState {
+    this.boqState = generateBoqFromRegistryAndSld(
+      this,
+      systemId,
+      resetRates ? undefined : (this.boqState || undefined)
+    );
+    this.notify();
+    return this.boqState;
+  }
+
+  public updateBoqMarkups(ocmPercent: number, profitPercent: number, vatPercent: number): void {
+    const boq = this.getBoqState();
+    boq.ocmPercent = Math.max(0, ocmPercent);
+    boq.profitPercent = Math.max(0, profitPercent);
+    boq.vatPercent = Math.max(0, vatPercent);
+    for (let i = 0; i < boq.items.length; i++) {
+      boq.items[i].ocmPercent = boq.ocmPercent;
+      boq.items[i].profitPercent = boq.profitPercent;
+      boq.items[i].vatPercent = boq.vatPercent;
+      boq.items[i] = recalculateDupaItem(boq.items[i]);
+    }
+    this.notify();
+  }
+
+  public updateDupaWorkItem(itemNo: string, updater: (item: DupaWorkItem) => DupaWorkItem): void {
+    const boq = this.getBoqState();
+    const idx = boq.items.findIndex(it => it.itemNo === itemNo);
+    if (idx >= 0) {
+      const updated = updater({ ...boq.items[idx] });
+      boq.items[idx] = recalculateDupaItem(updated);
+      this.notify();
+    }
   }
 
   public sanitizeStringIntegrity(): void {

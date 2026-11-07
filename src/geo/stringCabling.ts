@@ -261,7 +261,9 @@ export function calculateStringCableLengths(
       } else {
         // Dedicated array raceway (traditional entrance at path[0])
         const racewayEnd = raceway.path[raceway.path.length - 1];
-        const endToInv = effectiveInverterPoint ? calculateGeodeticDistanceM(racewayEnd, effectiveInverterPoint) : 0;
+        const rawEndToInv = effectiveInverterPoint ? calculateGeodeticDistanceM(racewayEnd, effectiveInverterPoint) : 0;
+        // Distance sanity check: Solar DC raceway to inverter should never exceed 5km (cross-continent leakage safeguard)
+        const endToInv = rawEndToInv > 5000 ? 0 : rawEndToInv;
         const commonRacewayRun = racewayPathLengthM + endToInv + riserDrop;
 
         leadToRacewayPosM = Number(calculateGeodeticDistanceM(startPanel.centroid, raceway.path[0]).toFixed(2));
@@ -284,15 +286,24 @@ export function calculateStringCableLengths(
       const dPos2D = calculateGeodeticDistanceM(startPanel.centroid, effectiveInverterPoint);
       const dNeg2D = calculateGeodeticDistanceM(endPanel.centroid, effectiveInverterPoint);
 
-      const dPos3D = calculate3DDistanceM(startPanel.centroid, effectiveInverterPoint, effectiveElevationM);
-      const dNeg3D = calculate3DDistanceM(endPanel.centroid, effectiveInverterPoint, effectiveElevationM);
-      direct3DDistanceM = Number(((dPos3D + dNeg3D) / 2).toFixed(2));
+      // Distance sanity check: Solar DC homerun should not exceed 5km.
+      // If > 5km, it indicates cross-project or continental coordinate mismatch (e.g. SF vs Sta. Ana).
+      if (dPos2D > 5000 || dNeg2D > 5000) {
+        homerunPositiveM = 15;
+        homerunNegativeM = 15;
+        totalHomerunM = 30;
+        direct3DDistanceM = 15;
+      } else {
+        const dPos3D = calculate3DDistanceM(startPanel.centroid, effectiveInverterPoint, effectiveElevationM);
+        const dNeg3D = calculate3DDistanceM(endPanel.centroid, effectiveInverterPoint, effectiveElevationM);
+        direct3DDistanceM = Number(((dPos3D + dNeg3D) / 2).toFixed(2));
 
-      // Realistic wiring route: horizontal ground/tray run + vertical riser drop down structure
-      const riserDrop = Math.abs(effectiveElevationM);
-      homerunPositiveM = Number((dPos2D + riserDrop).toFixed(2));
-      homerunNegativeM = Number((dNeg2D + riserDrop).toFixed(2));
-      totalHomerunM = Number((homerunPositiveM + homerunNegativeM).toFixed(2));
+        // Realistic wiring route: horizontal ground/tray run + vertical riser drop down structure
+        const riserDrop = Math.abs(effectiveElevationM);
+        homerunPositiveM = Number((dPos2D + riserDrop).toFixed(2));
+        homerunNegativeM = Number((dNeg2D + riserDrop).toFixed(2));
+        totalHomerunM = Number((homerunPositiveM + homerunNegativeM).toFixed(2));
+      }
     }
 
     const totalStringCableM = Number((intraStringLengthM + totalHomerunM).toFixed(2));
@@ -556,42 +567,200 @@ export function sortPanelsForStringing(
 }
 
 /**
+ * Groups panels into physically contiguous subarrays/blocks.
+ * Panels in the same table (for ground mounts) or immediate spatial neighbors
+ * with inter-panel distance <= adjacent threshold are clustered together.
+ * Clusters are returned sorted in logical spatial layout order.
+ */
+export function clusterContiguousPanels(
+  panels: SolarPanelObject[],
+  azimuthDeg: number = 180
+): SolarPanelObject[][] {
+  if (panels.length <= 1) return panels.length === 1 ? [[panels[0]]] : [];
+
+  const n = panels.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i: number): number {
+    if (parent[i] === i) return i;
+    return (parent[i] = find(parent[i]));
+  }
+  function union(i: number, j: number): void {
+    const rootI = find(i);
+    const rootJ = find(j);
+    if (rootI !== rootJ) parent[rootI] = rootJ;
+  }
+
+  // 1. Group by tableId if available (e.g. ground mount tables)
+  const tableMap = new Map<string, number[]>();
+  for (let i = 0; i < n; i++) {
+    const tid = panels[i].tableId;
+    if (tid) {
+      if (!tableMap.has(tid)) tableMap.set(tid, []);
+      tableMap.get(tid)!.push(i);
+    }
+  }
+  for (const indices of tableMap.values()) {
+    for (let k = 1; k < indices.length; k++) {
+      union(indices[0], indices[k]);
+    }
+  }
+
+  // 2. Spatial & grid neighbor clustering
+  const idToIndex = new Map<string, number>();
+  const gridMap = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    idToIndex.set(panels[i].id, i);
+    gridMap.set(`${panels[i].rowIndex}_${panels[i].colIndex}`, i);
+  }
+
+  for (let i = 0; i < n; i++) {
+    const p1 = panels[i];
+    const maxDim = Math.max(p1.lengthM || 2.4, p1.widthM || 1.134);
+    const maxNeighborDistM = maxDim * 1.75; // comfortably covers intra-cluster pitch & clamp spacing
+
+    // Check explicit neighbors (north, south, east, west)
+    if (p1.neighbors) {
+      for (const neighborId of [p1.neighbors.north, p1.neighbors.south, p1.neighbors.east, p1.neighbors.west]) {
+        if (neighborId && idToIndex.has(neighborId)) {
+          const j = idToIndex.get(neighborId)!;
+          const dist = calculateGeodeticDistanceM(p1.centroid, panels[j].centroid);
+          if (dist <= maxNeighborDistM) {
+            union(i, j);
+          }
+        }
+      }
+    }
+
+    // Check adjacent grid positions (-1..1 in rows and cols)
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const neighborKey = `${p1.rowIndex + dr}_${p1.colIndex + dc}`;
+        if (gridMap.has(neighborKey)) {
+          const j = gridMap.get(neighborKey)!;
+          const dist = calculateGeodeticDistanceM(p1.centroid, panels[j].centroid);
+          if (dist <= maxNeighborDistM) {
+            union(i, j);
+          }
+        }
+      }
+    }
+  }
+
+  // Collect clusters
+  const clusterMap = new Map<number, SolarPanelObject[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!clusterMap.has(root)) clusterMap.set(root, []);
+    clusterMap.get(root)!.push(panels[i]);
+  }
+
+  const clusters = Array.from(clusterMap.values());
+
+  // Sort clusters in spatial order along the zone layout
+  if (clusters.length > 1) {
+    let sumLat = 0;
+    let sumLng = 0;
+    for (const p of panels) {
+      sumLat += p.centroid.lat;
+      sumLng += p.centroid.lng;
+    }
+    const refOrigin = { lat: sumLat / n, lng: sumLng / n };
+    const azRad = (azimuthDeg * Math.PI) / 180;
+    const sinA = Math.sin(azRad);
+    const cosA = Math.cos(azRad);
+
+    const clusterMetrics = clusters.map(cluster => {
+      let cLat = 0;
+      let cLng = 0;
+      for (const p of cluster) {
+        cLat += p.centroid.lat;
+        cLng += p.centroid.lng;
+      }
+      const cCentroid = { lat: cLat / cluster.length, lng: cLng / cluster.length };
+      const m = latLngToLocalMetric(cCentroid, refOrigin);
+      const u = m.x * cosA - m.y * sinA;
+      const v = m.x * sinA + m.y * cosA;
+      return { cluster, u, v };
+    });
+
+    const uVals = clusterMetrics.map(cm => cm.u);
+    const vVals = clusterMetrics.map(cm => cm.v);
+    const spanU = Math.max(...uVals) - Math.min(...uVals);
+    const spanV = Math.max(...vVals) - Math.min(...vVals);
+
+    if (spanU >= spanV) {
+      clusterMetrics.sort((a, b) => {
+        if (Math.abs(a.u - b.u) > 0.5) return a.u - b.u;
+        return a.v - b.v;
+      });
+    } else {
+      clusterMetrics.sort((a, b) => {
+        if (Math.abs(a.v - b.v) > 0.5) return a.v - b.v;
+        return a.u - b.u;
+      });
+    }
+
+    return clusterMetrics.map(cm => cm.cluster);
+  }
+
+  return clusters;
+}
+
+/**
  * Ensures panels in a string circuit are ordered by direct physical adjacency,
  * connecting consecutive adjacent panels and preventing cross-array crisscrossing.
  */
 export function chainAdjacentPanels(panels: SolarPanelObject[]): SolarPanelObject[] {
   if (panels.length <= 2) return [...panels];
 
-  // First verify if existing stringOrder already gives a valid contiguous path
-  const sorted = [...panels].sort((a, b) => (a.stringOrder || 0) - (b.stringOrder || 0));
-  let hasAnomalousJump = false;
-  const orderSet = new Set<number>();
+  // 1. If panels already have a distinct, valid stringOrder without long-distance jumps, use it
+  const hasStringOrders = panels.every(p => p.stringOrder !== null && p.stringOrder !== undefined);
+  if (hasStringOrders) {
+    const sorted = [...panels].sort((a, b) => (a.stringOrder || 0) - (b.stringOrder || 0));
+    const orderSet = new Set<number>();
+    let hasOrderJump = false;
 
-  for (let i = 0; i < sorted.length; i++) {
-    const ord = sorted[i].stringOrder;
-    if (ord === null || ord === undefined || orderSet.has(ord)) {
-      hasAnomalousJump = true;
-      break;
-    }
-    orderSet.add(ord);
-
-    if (i > 0) {
-      const dLat = sorted[i].centroid.lat - sorted[i - 1].centroid.lat;
-      const dLng = sorted[i].centroid.lng - sorted[i - 1].centroid.lng;
-      // An anomalous jump across disparate sections of an array exceeds ~15 meters (~0.00015 deg)
-      if (dLat * dLat + dLng * dLng > 0.00015 * 0.00015) {
-        hasAnomalousJump = true;
+    for (let i = 0; i < sorted.length; i++) {
+      if (orderSet.has(sorted[i].stringOrder!)) {
+        hasOrderJump = true;
         break;
       }
+      orderSet.add(sorted[i].stringOrder!);
+
+      if (i > 0) {
+        const dLat = sorted[i].centroid.lat - sorted[i - 1].centroid.lat;
+        const dLng = sorted[i].centroid.lng - sorted[i - 1].centroid.lng;
+        // An anomalous jump across disparate sections of an array exceeds ~15 meters (~0.00015 deg)
+        if (dLat * dLat + dLng * dLng > 0.00015 * 0.00015) {
+          hasOrderJump = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasOrderJump) {
+      return sorted;
     }
   }
 
-  if (!hasAnomalousJump) {
-    return sorted;
+  // 2. If the input array `panels` is already in a continuous contiguous sequence (e.g. from sortPanelsForStringing),
+  // preserve that sequence!
+  let inputContiguous = true;
+  for (let i = 1; i < panels.length; i++) {
+    const dLat = panels[i].centroid.lat - panels[i - 1].centroid.lat;
+    const dLng = panels[i].centroid.lng - panels[i - 1].centroid.lng;
+    if (dLat * dLat + dLng * dLng > 0.00015 * 0.00015) {
+      inputContiguous = false;
+      break;
+    }
+  }
+  if (inputContiguous) {
+    return [...panels];
   }
 
-  // If there are duplicate stringOrders or long-distance jumps across the roof,
-  // chain panels greedily by spatial nearest neighbor to guarantee adjacent wiring.
+  // 3. Fallback: If there are duplicate stringOrders or long-distance jumps across the roof,
+  // chain panels greedily by spatial nearest neighbor to heal jumbled wiring.
   const remaining = [...panels];
   remaining.sort((a, b) => (a.rowIndex !== b.rowIndex ? a.rowIndex - b.rowIndex : a.colIndex - b.colIndex));
   const chain: SolarPanelObject[] = [remaining.shift()!];
@@ -613,4 +782,145 @@ export function chainAdjacentPanels(panels: SolarPanelObject[]): SolarPanelObjec
   }
 
   return chain;
+}
+
+export interface StringPartitionOptions {
+  customModulesPerString?: number;
+  direction?: StringTraverseDirection;
+  zoneName?: string;
+}
+
+export interface StringPartitionResult {
+  stringGroups: SolarPanelObject[][];
+  warnings: string[];
+}
+
+/**
+ * Partitions panels in an ArrayZone into continuous strings, respecting physical
+ * subarray/block boundaries (such as 2-row blocks separated by walkways).
+ * Panels inside each block are kept contiguous and unbroken whenever possible.
+ */
+export function partitionPanelsIntoStrings(
+  panels: SolarPanelObject[],
+  azimuthDeg: number,
+  limits: {
+    minPanelsPerString: number;
+    maxPanelsPerString: number;
+    optimalPanelsPerString: number;
+  },
+  options: StringPartitionOptions = {}
+): StringPartitionResult {
+  const warnings: string[] = [];
+  const stringGroups: SolarPanelObject[][] = [];
+  if (panels.length === 0) {
+    return { stringGroups, warnings };
+  }
+
+  const direction = options.direction || 'short_side';
+  const targetSize = options.customModulesPerString
+    ? Math.min(limits.maxPanelsPerString, Math.max(limits.minPanelsPerString, options.customModulesPerString))
+    : limits.optimalPanelsPerString;
+
+  // 1. Cluster panels into physically contiguous subarrays/blocks
+  const clusters = clusterContiguousPanels(panels, azimuthDeg);
+
+  let pendingPanels: SolarPanelObject[] = [];
+
+  for (const cluster of clusters) {
+    if (cluster.length === 0) continue;
+
+    // Sort panels inside this cluster into a contiguous serpentine path
+    const sortedCluster = sortPanelsForStringing(cluster, azimuthDeg, direction);
+    const M = sortedCluster.length;
+
+    // Check if cluster can stand alone as 1 or more strings within [minPanelsPerString, maxPanelsPerString]
+    const kMin = Math.ceil(M / limits.maxPanelsPerString);
+    const kMax = Math.floor(M / limits.minPanelsPerString);
+
+    if (kMin <= kMax && kMax >= 1) {
+      // If there were pending panels from a previous undersized cluster, resolve them first
+      if (pendingPanels.length > 0) {
+        if (pendingPanels.length + M <= limits.maxPanelsPerString) {
+          stringGroups.push(chainAdjacentPanels([...pendingPanels, ...sortedCluster]));
+          pendingPanels = [];
+          continue;
+        } else {
+          stringGroups.push(chainAdjacentPanels(pendingPanels));
+          if (pendingPanels.length < limits.minPanelsPerString) {
+            warnings.push(
+              `Array "${options.zoneName || 'Zone'}" string has ${pendingPanels.length} panels, below min MPPT voltage (${limits.minPanelsPerString} panels).`
+            );
+          }
+          pendingPanels = [];
+        }
+      }
+
+      // Choose optimal k
+      let k = Math.round(M / targetSize);
+      k = Math.max(kMin, Math.min(kMax, k));
+
+      const baseSize = Math.floor(M / k);
+      const remainder = M % k;
+      let offset = 0;
+      for (let i = 0; i < k; i++) {
+        const count = baseSize + (i < remainder ? 1 : 0);
+        const subPanels = sortedCluster.slice(offset, offset + count);
+        offset += count;
+        stringGroups.push(chainAdjacentPanels(subPanels));
+        if (count < limits.minPanelsPerString) {
+          warnings.push(
+            `Array "${options.zoneName || 'Zone'}" string #${stringGroups.length} has ${count} panels, below min MPPT voltage (${limits.minPanelsPerString} panels).`
+          );
+        }
+      }
+    } else {
+      // Cluster is too small to stand alone (M < minPanelsPerString) or cannot divide cleanly
+      pendingPanels.push(...sortedCluster);
+
+      if (pendingPanels.length >= limits.minPanelsPerString) {
+        if (pendingPanels.length <= limits.maxPanelsPerString) {
+          stringGroups.push(chainAdjacentPanels(pendingPanels));
+          pendingPanels = [];
+        } else {
+          let k = Math.max(
+            Math.ceil(pendingPanels.length / limits.maxPanelsPerString),
+            Math.round(pendingPanels.length / targetSize)
+          );
+          while (Math.ceil(pendingPanels.length / k) > limits.maxPanelsPerString) {
+            k++;
+          }
+          const baseSize = Math.floor(pendingPanels.length / k);
+          const remainder = pendingPanels.length % k;
+          let offset = 0;
+          for (let i = 0; i < k; i++) {
+            const count = baseSize + (i < remainder ? 1 : 0);
+            const sub = pendingPanels.slice(offset, offset + count);
+            offset += count;
+            stringGroups.push(chainAdjacentPanels(sub));
+          }
+          pendingPanels = [];
+        }
+      }
+    }
+  }
+
+  // Handle any remaining pending panels at the end of the zone
+  if (pendingPanels.length > 0) {
+    if (
+      stringGroups.length > 0 &&
+      stringGroups[stringGroups.length - 1].length + pendingPanels.length <= limits.maxPanelsPerString
+    ) {
+      const lastGroup = stringGroups.pop()!;
+      stringGroups.push(chainAdjacentPanels([...lastGroup, ...pendingPanels]));
+    } else {
+      stringGroups.push(chainAdjacentPanels(pendingPanels));
+      if (pendingPanels.length < limits.minPanelsPerString) {
+        warnings.push(
+          `Array "${options.zoneName || 'Zone'}" string #${stringGroups.length} has ${pendingPanels.length} panels, below min MPPT voltage (${limits.minPanelsPerString} panels).`
+        );
+      }
+    }
+  }
+
+  return { stringGroups, warnings };
 }

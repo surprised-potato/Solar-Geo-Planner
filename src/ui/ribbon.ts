@@ -9,12 +9,15 @@ import {
   STANDARD_AC_VOLTAGES_3PHASE,
   STANDARD_AC_VOLTAGES_1PHASE,
   AcPhaseType,
-  StringTraverseDirection
+  MdpTapType,
+  StringTraverseDirection,
+  SolarSystem
 } from '../types/solar';
 import { MapController } from '../map/mapController';
 import { calculateGeodeticDistanceM } from '../geo/projection';
+import { sizePecTransformer, getRecommendedMdpMainBreaker } from '../geo/pecWireSizing';
 
-export type RibbonTab = 'orientation' | 'spacing' | 'obstacles' | 'module' | 'stringing' | 'views' | 'sld';
+export type RibbonTab = 'orientation' | 'spacing' | 'obstacles' | 'module' | 'stringing' | 'ac' | 'views';
 
 export class RibbonUI {
   private container: HTMLElement;
@@ -23,13 +26,13 @@ export class RibbonUI {
   private activeTab: RibbonTab = 'orientation';
   private isCollapsed: boolean = false;
   private isInteractingSlider: boolean = false;
-  private onViewModeChange?: (view: 'map' | 'sld') => void;
+  private onViewModeChange?: (view: 'map' | 'sld' | 'boq') => void;
 
   constructor(
     containerId: string,
     store: ProjectStore,
     mapController?: MapController,
-    onViewModeChange?: (view: 'map' | 'sld') => void
+    onViewModeChange?: (view: 'map' | 'sld' | 'boq') => void
   ) {
     const el = document.getElementById(containerId);
     if (!el) throw new Error(`Element #${containerId} not found`);
@@ -54,11 +57,6 @@ export class RibbonUI {
   public setActiveTab(tab: RibbonTab): void {
     this.activeTab = tab;
     this.isCollapsed = false;
-    if (tab === 'sld') {
-      this.onViewModeChange?.('sld');
-    } else {
-      this.onViewModeChange?.('map');
-    }
     this.render();
   }
 
@@ -89,68 +87,8 @@ export class RibbonUI {
     const totalSelectedPanels = selectedZones.reduce((sum, z) => sum + z.activePanelCount, 0);
     const totalSelectedKwp = Number(selectedZones.reduce((sum, z) => sum + z.totalKwp, 0).toFixed(2));
 
-    const isSld = this.activeTab === 'sld';
-
     // Row 1: Ribbon Scope & Command Bar
-    const scopeBarHtml = isSld
-      ? `
-      <div class="ribbon-scope-bar sld-scope-mode">
-        <!-- Scope Breadcrumb: System Context for SLD -->
-        <div class="ribbon-breadcrumb-trail">
-          <!-- System Pill -->
-          <div class="ribbon-scope-pill system-pill" title="Active Electrical System for Single Line Diagram">
-            <span class="system-color-dot" style="background-color: ${currentSystem?.color || '#0284c7'}; box-shadow: 0 0 6px ${currentSystem?.color || '#0284c7'}80;"></span>
-            <span class="scope-pill-label">System</span>
-            <select id="ribbon-system-select" class="ribbon-scope-select" aria-label="Select Active Electrical System">
-              ${systems
-                .map(
-                  s => `
-                <option value="${s.id}" ${currentSystem?.id === s.id ? 'selected' : ''}>
-                  ${s.name} (${s.zoneIds.length} ${s.zoneIds.length === 1 ? 'array' : 'arrays'} • ${s.inverter.inverterCount * s.inverter.ratedAcPowerKw}kW AC)
-                </option>
-              `
-                )
-                .join('')}
-            </select>
-            <button id="ribbon-btn-new-system" class="ribbon-pill-btn" title="Add new independent system">+ System</button>
-            <button id="ribbon-btn-edit-system" class="ribbon-pill-btn icon-only" title="Rename active system">✏️</button>
-          </div>
-
-          <span class="ribbon-breadcrumb-arrow" aria-hidden="true">›</span>
-
-          <!-- SLD Badge -->
-          <div class="ribbon-scope-pill sld-pill" title="Electrical Single Line Diagram View">
-            <span class="scope-pill-icon">⚡</span>
-            <span class="scope-pill-label">2D Wireframe SLD</span>
-          </div>
-        </div>
-
-        <!-- Right: Telemetry & Actions -->
-        <div class="ribbon-scope-right">
-          <div class="ribbon-live-kpi-badge sld-live-kpi" title="Active system electrical capacity">
-            <span class="kpi-metric highlight">⚡ ${currentSystemSummary?.totalKwp || 0} <small>kWp DC</small></span>
-            <span class="kpi-sep">•</span>
-            <span class="kpi-metric">${currentSystemSummary?.inverterAcKw || 0} <small>kW AC</small></span>
-            <span class="kpi-sep">•</span>
-            <span class="kpi-metric">DC/AC ${currentSystemSummary?.dcAcRatio || 0}</span>
-            <span class="kpi-sep">•</span>
-            <span class="kpi-mount-tag">${currentSystemSummary?.totalActivePanels || 0} PANELS</span>
-          </div>
-
-          <button id="ribbon-btn-return-map" class="ribbon-pill-btn primary" title="Switch to Satellite Map CAD View">
-            🗺️ Map View
-          </button>
-
-          <button id="ribbon-toggle-collapse" class="ribbon-collapse-toggle ${this.isCollapsed ? 'is-collapsed' : ''}" title="${this.isCollapsed ? 'Expand Ribbon Controls' : 'Collapse Ribbon Controls'}" aria-expanded="${!this.isCollapsed}">
-            <svg class="collapse-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="${this.isCollapsed ? '6 9 12 15 18 9' : '18 15 12 9 6 15'}"></polyline>
-            </svg>
-            <span class="collapse-text">${this.isCollapsed ? 'Expand' : 'Collapse'}</span>
-          </button>
-        </div>
-      </div>
-    `
-      : `
+    const scopeBarHtml = `
       <div class="ribbon-scope-bar">
         <!-- Scope Breadcrumb: System & Array Context -->
         <div class="ribbon-breadcrumb-trail">
@@ -229,6 +167,14 @@ export class RibbonUI {
             <span class="draft-btn-icon">⚡</span>
             <span>+ Inverter</span>
           </button>
+          <button id="ribbon-btn-new-pcc" class="ribbon-draft-btn ${drawingMode === 'ac_interconnection' ? 'active-pulse' : ''}" title="Pin AC Interconnection Point (PCC) on satellite map">
+            <span class="draft-btn-icon">🏢</span>
+            <span>+ PCC</span>
+          </button>
+          <button id="ribbon-btn-new-ac-feeder" class="ribbon-draft-btn ${drawingMode === 'ac_raceway' ? 'active-pulse' : ''}" title="Draw AC Feeder Conduit from Inverter Station to PCC">
+            <span class="draft-btn-icon">⚡</span>
+            <span>+ AC Feeder</span>
+          </button>
         </div>
 
         <!-- Right: Telemetry & Collapse Control -->
@@ -295,11 +241,11 @@ export class RibbonUI {
             <button class="ribbon-tab-pill ${this.activeTab === 'stringing' ? 'active' : ''}" data-tab="stringing" ${!zone ? 'disabled' : ''}>
               <span>🔌</span> Stringing & Inverters
             </button>
+            <button class="ribbon-tab-pill ${this.activeTab === 'ac' ? 'active' : ''}" data-tab="ac" title="AC Interconnection, Transformers & MDP">
+              <span>⚡</span> AC System (${currentSystem ? (currentSystem.systemVoltageV || 400) + 'V' : '-'})
+            </button>
             <button class="ribbon-tab-pill ${this.activeTab === 'views' ? 'active' : ''}" data-tab="views" title="Map View Visibility Filters & Presets">
               <span>👁️</span> Views (${this.getActivePresetLabel()})
-            </button>
-            <button class="ribbon-tab-pill ${this.activeTab === 'sld' ? 'active' : ''}" data-tab="sld" title="Single Line Diagram View">
-              <span>⚡</span> SLD Wireframe
             </button>
           </div>
           <span class="ribbon-collapsed-hint">Click any section or Expand to inspect parameters</span>
@@ -337,15 +283,15 @@ export class RibbonUI {
           <span class="tab-title">Stringing & Inverters</span>
           ${currentSystem ? `<span class="tab-subtext-badge">DC/AC ${currentSystemSummary?.dcAcRatio || '1.0'}</span>` : ''}
         </button>
+        <button class="ribbon-tab-item ${this.activeTab === 'ac' ? 'active' : ''}" data-tab="ac" role="tab" aria-selected="${this.activeTab === 'ac'}" title="Configure System Tapping Voltage, Auto-Transformers, AC Combiner, and Main Distribution Panel">
+          <span class="tab-icon">⚡</span>
+          <span class="tab-title">AC System & Grid</span>
+          ${currentSystem ? `<span class="tab-subtext-badge">${currentSystem.systemVoltageV || 400}V • ${currentSystem.mdpTapType === 'line_side' ? 'Line' : 'Load'}</span>` : ''}
+        </button>
         <button class="ribbon-tab-item ${this.activeTab === 'views' ? 'active' : ''}" data-tab="views" role="tab" aria-selected="${this.activeTab === 'views'}" title="Configure what map elements are visible with quick presets">
           <span class="tab-icon">👁️</span>
           <span class="tab-title">Views & Filters</span>
           <span class="tab-subtext-badge">${this.getActivePresetLabel()}</span>
-        </button>
-        <button class="ribbon-tab-item ${this.activeTab === 'sld' ? 'active' : ''}" data-tab="sld" role="tab" aria-selected="${this.activeTab === 'sld'}" title="View 2D Wireframe Single Line Diagram of selected system">
-          <span class="tab-icon">⚡</span>
-          <span class="tab-title">Single Line Diagram</span>
-          ${currentSystem ? `<span class="tab-subtext-badge">${currentSystem.inverter.inverterCount * currentSystem.inverter.ratedAcPowerKw}kW AC</span>` : ''}
         </button>
       </div>
     `;
@@ -354,11 +300,10 @@ export class RibbonUI {
     let contentHtml = '';
     let batchBannerHtml = '';
 
-    if (this.activeTab === 'sld') {
-      // In SLD mode, keep Row 3 empty so the 2D wireframe schematic diagram has maximum vertical screen space
-      contentHtml = '';
-    } else if (this.activeTab === 'views') {
+    if (this.activeTab === 'views') {
       contentHtml = this.renderViewsTab();
+    } else if (this.activeTab === 'ac') {
+      contentHtml = this.renderAcTab(currentSystem);
     } else if (!zone) {
       contentHtml = `
         <div class="ribbon-empty-deck" role="region" aria-label="CAD Workspace Starter">
@@ -1479,6 +1424,17 @@ export class RibbonUI {
       const isPlacingInv = this.store.drawingMode === 'inverter';
       this.store.setDrawingMode(isPlacingInv ? 'none' : 'inverter');
     });
+    document.getElementById('ribbon-btn-new-pcc')?.addEventListener('click', () => {
+      const isPlacingPcc = this.store.drawingMode === 'ac_interconnection';
+      this.store.setDrawingMode(isPlacingPcc ? 'none' : 'ac_interconnection');
+    });
+    document.getElementById('ribbon-btn-new-ac-feeder')?.addEventListener('click', () => {
+      if (this.store.drawingMode === 'ac_raceway') {
+        this.mapController?.finishDrawing();
+      } else {
+        this.store.setDrawingMode('ac_raceway');
+      }
+    });
 
     document.getElementById('ribbon-empty-roof')?.addEventListener('click', () => {
       this.store.setDrawingMode('zone', 'roof');
@@ -2169,6 +2125,87 @@ export class RibbonUI {
       }
     });
 
+    document.getElementById('ribbon-btn-place-pcc')?.addEventListener('click', () => {
+      this.store.setDrawingMode(this.store.drawingMode === 'ac_interconnection' ? 'none' : 'ac_interconnection');
+    });
+
+    document.getElementById('ribbon-btn-fly-pcc')?.addEventListener('click', () => {
+      if (systemId) {
+        this.mapController?.zoomToAcInterconnection(systemId);
+      }
+    });
+
+    document.getElementById('ribbon-btn-clear-pcc')?.addEventListener('click', () => {
+      if (systemId) {
+        this.store.clearSystemAcInterconnectionLocation(systemId);
+      }
+    });
+
+    document.getElementById('ribbon-btn-draw-ac-feeder')?.addEventListener('click', () => {
+      if (this.store.drawingMode === 'ac_raceway') {
+        this.mapController?.finishDrawing();
+      } else {
+        this.store.setDrawingMode('ac_raceway');
+      }
+    });
+
+    document.getElementById('ribbon-btn-fly-ac-feeder')?.addEventListener('click', () => {
+      if (systemId) {
+        this.mapController?.zoomToAcRaceway(systemId);
+      }
+    });
+
+    document.getElementById('ribbon-btn-clear-ac-feeder')?.addEventListener('click', () => {
+      if (systemId) {
+        this.store.clearSystemAcRaceway(systemId);
+      }
+    });
+
+    const pccElevInput = document.getElementById('ribbon-pcc-elevation') as HTMLInputElement;
+    pccElevInput?.addEventListener('change', () => {
+      if (systemId) {
+        this.store.setSystemAcInterconnectionElevation(systemId, Number(pccElevInput.value) || 0);
+      }
+    });
+
+    const tapVacSelect = (document.getElementById('ribbon-ac-tap-voltage') || document.getElementById('ribbon-system-tap-voltage')) as HTMLSelectElement;
+    tapVacSelect?.addEventListener('change', () => {
+      if (!systemId) return;
+      if (tapVacSelect.value === 'custom') {
+        const currentSys = this.store.getSystem(systemId);
+        const val = prompt('Enter custom System Tapping Voltage in Volts (e.g. 480, 230, 400):', String(currentSys?.systemVoltageV || 400));
+        if (val && Number(val) > 0) {
+          this.store.updateSystem(systemId, { systemVoltageV: Number(val) });
+        }
+      } else {
+        const v = Number(tapVacSelect.value);
+        if (v > 0) {
+          this.store.updateSystem(systemId, { systemVoltageV: v });
+        }
+      }
+    });
+
+    const mdpTapSelect = (document.getElementById('ribbon-ac-mdp-tap') || document.getElementById('ribbon-mdp-tap-type')) as HTMLSelectElement;
+    mdpTapSelect?.addEventListener('change', () => {
+      if (systemId) {
+        this.store.updateSystem(systemId, { mdpTapType: mdpTapSelect.value as MdpTapType });
+      }
+    });
+
+    const mdpBreakerSelect = document.getElementById('ribbon-ac-mdp-main-breaker') as HTMLSelectElement;
+    mdpBreakerSelect?.addEventListener('change', () => {
+      if (systemId) {
+        this.store.updateSystem(systemId, { mdpMainBreakerA: Number(mdpBreakerSelect.value) });
+      }
+    });
+
+    const acCombinerChk = (document.getElementById('ribbon-ac-chk-combiner') || document.getElementById('ribbon-chk-ac-combiner')) as HTMLInputElement;
+    acCombinerChk?.addEventListener('change', () => {
+      if (systemId) {
+        this.store.updateSystem(systemId, { hasAcCombiner: acCombinerChk.checked });
+      }
+    });
+
     // Auto-String Traversal Direction Selection
     document.getElementById('ribbon-str-direction')?.addEventListener('change', (e) => {
       const newDir = ((e.target as HTMLSelectElement).value as StringTraverseDirection) || 'short_side';
@@ -2444,6 +2481,236 @@ export class RibbonUI {
                 ✕ Minimal
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderAcTab(currentSystem?: SolarSystem | null): string {
+    const activeSystem = currentSystem || this.store.getSelectedSystem() || this.store.getSystems()[0];
+    const activeSystemId = activeSystem?.id || '';
+    const inv = activeSystem?.inverter || GENERIC_INVERTER_PRESETS[0];
+    const invCount = inv.inverterCount || 1;
+    const invKw = inv.ratedAcPowerKw || 100;
+    const totalKw = invCount * invKw;
+    const phase: AcPhaseType = inv.phase || 'three_phase';
+    const is3Ph = phase === 'three_phase';
+    const invVoltageV = inv.acVoltage || (is3Ph ? 400 : 230);
+    const systemVoltageV = activeSystem?.systemVoltageV || invVoltageV;
+    const mdpTapType: MdpTapType = activeSystem?.mdpTapType || 'load_side';
+    const hasAcCombiner = activeSystem?.hasAcCombiner !== false;
+
+    const acFeederSummary = this.store.getSystemAcFeederSummary(activeSystemId);
+    const xfmDesign = sizePecTransformer(totalKw, phase, invVoltageV, systemVoltageV);
+    const isDrawingPcc = this.store.drawingMode === 'ac_interconnection';
+    const isDrawingAcFeeder = this.store.drawingMode === 'ac_raceway';
+
+    const standardVoltages = is3Ph ? STANDARD_AC_VOLTAGES_3PHASE : STANDARD_AC_VOLTAGES_1PHASE;
+    const isCustomTapVoltage = !standardVoltages.includes(systemVoltageV);
+
+    const standardBreakers = [60, 100, 125, 150, 175, 200, 225, 250, 300, 400, 600, 800, 1000, 1200, 1600, 2000, 2500];
+    const recommendedMdpBreaker = getRecommendedMdpMainBreaker(acFeederSummary.ratedCurrentA * 1.25, activeSystem?.mdpMainBreakerA);
+    const currentMdpBreaker = activeSystem?.mdpMainBreakerA || recommendedMdpBreaker;
+
+    const invAmps = is3Ph
+      ? (invKw * 1000) / (Math.sqrt(3) * invVoltageV)
+      : (invKw * 1000) / invVoltageV;
+    const totalInvAmps = invAmps * invCount;
+    const collectorBreakerA = Math.ceil(totalInvAmps * 1.25);
+
+    return `
+      <div class="ribbon-panel" role="tabpanel" aria-label="AC Interconnection, Grid Voltage, Transformers and MDP">
+        <!-- Pod 1: System Tapping Voltage & Transformer Design (PEC 4.50) -->
+        <div class="cad-pod wide">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">⚡ GRID TAPPING VOLTAGE & TRANSFORMER</span>
+            <span class="cad-pod-tag ${xfmDesign.required ? 'warning' : 'accent'}">
+              ${xfmDesign.required ? `XFM: ${xfmDesign.kvaRating} kVA` : 'DIRECT TAP'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row" style="display: flex; gap: 6px;">
+              <div class="cad-input-unit-wrap sm" style="flex: 1.2;" title="Grid Interconnection / Tapping Point Nominal Voltage">
+                <span class="cad-unit-prefix">Tap VAC</span>
+                <select id="ribbon-ac-tap-voltage" class="cad-select-sm" aria-label="System Tapping Voltage">
+                  ${standardVoltages.map(v => `
+                    <option value="${v}" ${systemVoltageV === v ? 'selected' : ''}>${v} V (${is3Ph ? '3Φ' : '1Φ'})</option>
+                  `).join('')}
+                  <option value="custom" ${isCustomTapVoltage ? 'selected' : ''}>Custom (${systemVoltageV}V)</option>
+                </select>
+              </div>
+              <div class="cad-telemetry-chip" style="flex: 1;" title="Inverter Output AC Voltage configured in Inverter Station">
+                <span class="chip-label">Inverter:</span>
+                <span class="chip-val"><strong>${invVoltageV}V</strong> (${is3Ph ? '3Φ' : '1Φ'})</span>
+              </div>
+            </div>
+
+            <!-- Transformer Design Status HUD -->
+            <div style="margin-top: 5px;">
+              ${xfmDesign.required ? `
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 5px 8px; font-size: 11px;">
+                  <div style="display: flex; justify-content: space-between; font-weight: 600; color: #f59e0b; margin-bottom: 2px;">
+                    <span>⚡ ${xfmDesign.type === 'step_up' ? 'Step-Up' : 'Step-Down'} Transformer Required (PEC 4.50)</span>
+                    <span>${xfmDesign.kvaRating} kVA • ${xfmDesign.vectorGroup || 'Dyn11'}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; color: var(--text-muted, #94a3b8); font-size: 10px;">
+                    <span>Pri: ${xfmDesign.primaryVoltageV}V (${xfmDesign.primaryFullLoadCurrentA.toFixed(1)}A FLA, ${xfmDesign.primaryPecSizing.ocpdRatingA}A OCPD)</span>
+                    <span>Sec: ${xfmDesign.secondaryVoltageV}V (${xfmDesign.secondaryFullLoadCurrentA.toFixed(1)}A FLA, ${xfmDesign.secondaryPecSizing.ocpdRatingA}A OCPD)</span>
+                  </div>
+                </div>
+              ` : `
+                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 5px 8px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: #10b981;">
+                  <span>✓</span>
+                  <span><strong>Matched Voltage (${invVoltageV}V)</strong> — Direct interconnection without power transformer</span>
+                </div>
+              `}
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">Inverter AC voltage (${invVoltageV}V) is configured in the Stringing & Inverters tab.</span>
+          </div>
+        </div>
+
+        <!-- Pod 2: AC Combiner Box & Collector Breaker -->
+        <div class="cad-pod">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">📦 AC COMBINER BOX</span>
+            <span class="cad-pod-tag ${hasAcCombiner ? 'accent' : ''}">${hasAcCombiner ? 'COLLECTED' : 'DIRECT'}</span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row">
+              <label style="font-size: 11px; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-main); font-weight: 500;" title="Consolidate multiple inverter branch circuits into an AC Combiner with a main collector breaker">
+                <input type="checkbox" id="ribbon-ac-chk-combiner" ${hasAcCombiner ? 'checked' : ''} />
+                <span>Enable AC Combiner Box</span>
+              </label>
+            </div>
+            <div class="cad-field-row" style="margin-top: 4px;">
+              <div class="cad-telemetry-chip ${hasAcCombiner ? 'highlight' : ''}" style="width: 100%;">
+                <span class="chip-label">Collector Breaker:</span>
+                <span class="chip-val"><strong>${hasAcCombiner ? `${collectorBreakerA}A OCPD` : 'Bypassed'}</strong> ${hasAcCombiner ? `(${invCount} Inv × ${invAmps.toFixed(1)}A × 125%)` : ''}</span>
+              </div>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${hasAcCombiner ? `Combines ${invCount} inverter outputs before transformer / MDP main bus` : 'Each inverter feeds separately to MDP or transformer'}</span>
+          </div>
+        </div>
+
+        <!-- Pod 3: Main Distribution Panel (MDP) & Interconnection Tap -->
+        <div class="cad-pod wide">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">🏢 MAIN DISTRIBUTION PANEL (MDP)</span>
+            <span class="cad-pod-tag ${mdpTapType === 'line_side' ? 'accent' : 'highlight'}">
+              ${mdpTapType === 'line_side' ? 'LINE-SIDE TAP' : 'LOAD-SIDE TAP'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-control-row compact-gap">
+              <div class="cad-input-unit-wrap sm" style="flex: 1.2;" title="MDP Interconnection Tap Point Architecture (PEC 705.12)">
+                <span class="cad-unit-prefix">Tap Type</span>
+                <select id="ribbon-ac-mdp-tap" class="cad-select-sm" aria-label="MDP Interconnection Tap Architecture">
+                  <option value="load_side" ${mdpTapType === 'load_side' ? 'selected' : ''}>Load-Side (120% Rule)</option>
+                  <option value="line_side" ${mdpTapType === 'line_side' ? 'selected' : ''}>Line-Side (Supply Side)</option>
+                </select>
+              </div>
+              <div class="cad-input-unit-wrap sm" style="flex: 1;" title="MDP Main Circuit Breaker Rating in Amperes">
+                <span class="cad-unit-prefix">Main OCPD</span>
+                <select id="ribbon-ac-mdp-main-breaker" class="cad-select-sm" aria-label="MDP Main Circuit Breaker Rating">
+                  ${standardBreakers.map(b => `
+                    <option value="${b}" ${currentMdpBreaker === b ? 'selected' : ''}>${b} A Main</option>
+                  `).join('')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Interconnection Architecture Callout -->
+            <div style="margin-top: 5px; font-size: 10.5px; padding: 4px 8px; border-radius: 4px; background: ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)'}; border: 1px solid ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(16, 185, 129, 0.25)'};">
+              <div style="font-weight: 600; color: ${mdpTapType === 'load_side' ? '#3b82f6' : '#10b981'}; margin-bottom: 2px;">
+                ${mdpTapType === 'load_side' ? '🔌 Load-Side Tap: Subject to PEC 705.12 (120% Busbar Rule)' : '⚡ Line-Side Tap: Connected ahead of MDP Main Breaker (PEC 705.11)'}
+              </div>
+              <div style="color: var(--text-muted, #94a3b8); font-size: 10px;">
+                ${mdpTapType === 'load_side'
+                  ? '🏢 Facility Loads connected downstream on Load Side of MDP Main Breaker. Solar backfeeds opposite end of busbar.'
+                  : '🏢 Facility Loads fed normally via MDP Main Breaker. Solar taps utility supply side without busbar ampacity limitation.'}
+              </div>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">SLD schematics dynamically reflect Line vs Load side tapping and facility load branch.</span>
+          </div>
+        </div>
+
+        <!-- Pod 4: Point of Common Coupling (PCC) Interconnection Location -->
+        <div class="cad-pod">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">📍 PCC INTERCONNECTION POINT</span>
+            <span class="cad-pod-tag ${activeSystem?.acInterconnectionLocation ? 'accent' : 'warning'}">
+              ${activeSystem?.acInterconnectionLocation ? 'PINNED' : 'NOT SET'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row" style="display: flex; gap: 6px;">
+              <button id="ribbon-btn-place-pcc" class="btn btn-xs ${isDrawingPcc ? 'btn-primary active-pulse' : 'btn-outline accent'}" style="flex: 1;" title="Click to pin AC Point of Common Coupling (PCC) on satellite map">
+                ${isDrawingPcc ? '🎯 Click Map to Pin...' : '📍 Pin PCC'}
+              </button>
+              ${activeSystem?.acInterconnectionLocation ? `
+                <button id="ribbon-btn-fly-pcc" class="btn btn-xs btn-outline" title="Zoom map to PCC point">🎯</button>
+                <button id="ribbon-btn-clear-pcc" class="btn-icon xs danger" title="Clear PCC location">✕</button>
+              ` : ''}
+            </div>
+            <div class="cad-field-row" style="margin-top: 4px;">
+              <div class="cad-input-unit-wrap full" title="Ground elevation of AC PCC in meters">
+                <span class="cad-unit-prefix">PCC Elev</span>
+                <input type="number" id="ribbon-pcc-elevation" class="cad-num-input" value="${activeSystem?.acInterconnectionElevationM ?? 0}" step="0.5" aria-label="AC PCC Elevation in Meters" />
+                <span class="cad-unit-addon">m</span>
+              </div>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${activeSystem?.acInterconnectionLocation ? `${activeSystem.acInterconnectionLocation.lat.toFixed(5)}, ${activeSystem.acInterconnectionLocation.lng.toFixed(5)}` : 'Click Pin PCC to place grid connection on map'}</span>
+          </div>
+        </div>
+
+        <!-- Pod 5: AC Feeder Raceway & Sizing Telemetry (PEC 2.15) -->
+        <div class="cad-pod wide">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">⚡ AC FEEDER RACEWAY & SIZING (PEC)</span>
+            <span class="cad-pod-tag ${acFeederSummary.isCompliant ? 'accent' : 'warning'}">
+              ${acFeederSummary.totalRunM > 0 ? `${acFeederSummary.voltageDropPercent}% DROP` : 'NO FEEDER'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row" style="display: flex; gap: 6px;">
+              <button id="ribbon-btn-draw-ac-feeder" class="btn btn-xs ${isDrawingAcFeeder ? 'btn-primary active-pulse' : 'btn-outline warning'}" style="flex: 1;" title="Draw AC Feeder Raceway polyline from Inverter/Combiner to PCC">
+                ${isDrawingAcFeeder ? '✏️ Finish Drawing' : '⚡ Draw AC Feeder'}
+              </button>
+              ${activeSystem?.acRaceway ? `
+                <button id="ribbon-btn-fly-ac-feeder" class="btn btn-xs btn-outline" title="Zoom to AC Feeder">🎯</button>
+                <button id="ribbon-btn-clear-ac-feeder" class="btn-icon xs danger" title="Clear AC Feeder">✕</button>
+              ` : ''}
+            </div>
+            <div class="cad-telemetry-hud-grid" style="margin-top: 5px;">
+              <div class="hud-item highlight" title="Total AC feeder route distance including riser elevation changes">
+                <span class="hud-label">Feeder Run</span>
+                <span class="hud-val">${acFeederSummary.totalRunM} <small>m</small></span>
+              </div>
+              <div class="hud-item ${acFeederSummary.isCompliant ? '' : 'danger'}" title="AC Feeder Voltage Drop percentage (PEC limit: 3.0%)">
+                <span class="hud-label">Voltage Drop</span>
+                <span class="hud-val">${acFeederSummary.voltageDropPercent}% <small>(${acFeederSummary.voltageDropV}V)</small></span>
+              </div>
+              <div class="hud-item" title="Recommended PEC phase conductor size">
+                <span class="hud-label">Conductor</span>
+                <span class="hud-val" style="font-size: 11px;">${acFeederSummary.conductorCallout || 'THHN Cu'}</span>
+              </div>
+              <div class="hud-item" title="Conduit diameter per PEC Chapter 9">
+                <span class="hud-label">Conduit</span>
+                <span class="hud-val" style="font-size: 11px;">${acFeederSummary.conduitCallout || 'PVC/RMC'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${acFeederSummary.totalRunM > 0 ? (acFeederSummary.isCompliant ? '✓ Compliant with PEC 2.15 feeder voltage drop limit (≤ 3.0%)' : '⚠️ Voltage drop exceeds PEC 2.15 limit of 3.0% — increase conductor size') : 'Draw AC raceway polyline from inverter to PCC to compute drop'}</span>
           </div>
         </div>
       </div>

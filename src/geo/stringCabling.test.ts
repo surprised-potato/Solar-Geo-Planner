@@ -5,6 +5,8 @@ import {
   getArrayLongSideAxis,
   sortPanelsForStringing,
   chainAdjacentPanels,
+  clusterContiguousPanels,
+  partitionPanelsIntoStrings,
   findClosestPointOnPolyline
 } from './stringCabling';
 import { calculateGeodeticDistanceM, calculate3DDistanceM, localMetricToLatLng } from './projection';
@@ -568,5 +570,209 @@ describe('String Geolocational Cabling Engine', () => {
     const summary = summarizeSystemCabling('sys-shared', results, inverterPt, 0);
     expect(summary.totalStrings).toBe(2);
     expect(summary.totalRacewayLengthM).toBeCloseTo(110.3, 0);
+  });
+
+  describe('Contiguous Subarray Clustering & Continuous Stringing', () => {
+    it('correctly clusters rooftop panels separated by walkway aisles into independent blocks', () => {
+      // 3 distinct 2x7 blocks separated by 2-meter aisles
+      const panels: SolarPanelObject[] = [];
+      for (let b = 0; b < 3; b++) {
+        const xOffset = b * (7 * 1.134 + 2.0); // 2m aisle between blocks
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 7; c++) {
+            const globalCol = b * 10 + c;
+            panels.push({
+              id: `b${b}_r${r}_c${c}`,
+              systemId: 'sys-1',
+              zoneId: 'zone-1',
+              moduleId: 'mod-1',
+              rowIndex: r,
+              colIndex: globalCol,
+              centroid: localMetricToLatLng({ x: xOffset + c * 1.134, y: r * 2.382 }, origin),
+              corners: [origin, origin, origin, origin],
+              azimuthDeg: 180,
+              tiltDeg: 15,
+              orientation: 'portrait',
+              widthM: 1.134,
+              lengthM: 2.382,
+              projectedDepthM: 2.3,
+              active: true,
+              electrical: { modelName: 'M', nominalPowerW: 600, voc: 48, vmp: 40, isc: 15, imp: 14 },
+              stringId: null,
+              stringOrder: null,
+              mpptId: null,
+              inverterIndex: null,
+              neighbors: { north: null, south: null, east: null, west: null }
+            });
+          }
+        }
+      }
+
+      const clusters = clusterContiguousPanels(panels, 180);
+      expect(clusters.length).toBe(3);
+      expect(clusters[0].length).toBe(14);
+      expect(clusters[1].length).toBe(14);
+      expect(clusters[2].length).toBe(14);
+
+      // Verify each cluster only contains panels from its respective block
+      const foundBlocks = clusters.map(cl => cl[0].id.split('_')[0]).sort();
+      expect(foundBlocks).toEqual(['b0', 'b1', 'b2']);
+      for (const cluster of clusters) {
+        const blockPrefix = cluster[0].id.split('_')[0];
+        expect(cluster.every(p => p.id.startsWith(`${blockPrefix}_`))).toBe(true);
+      }
+    });
+
+    it('partitions multi-block rooftops into 100% continuous dedicated strings without skipping panels or bridging aisles', () => {
+      // Create 3 blocks of 2x7 = 14 panels each (total 42 panels)
+      const panels: SolarPanelObject[] = [];
+      for (let b = 0; b < 3; b++) {
+        const xOffset = b * (7 * 1.134 + 2.0);
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 7; c++) {
+            panels.push({
+              id: `b${b}_r${r}_c${c}`,
+              systemId: 'sys-1',
+              zoneId: 'zone-1',
+              moduleId: 'mod-1',
+              rowIndex: r,
+              colIndex: b * 10 + c,
+              centroid: localMetricToLatLng({ x: xOffset + c * 1.134, y: r * 2.382 }, origin),
+              corners: [origin, origin, origin, origin],
+              azimuthDeg: 180,
+              tiltDeg: 15,
+              orientation: 'portrait',
+              widthM: 1.134,
+              lengthM: 2.382,
+              projectedDepthM: 2.3,
+              active: true,
+              electrical: { modelName: 'M', nominalPowerW: 600, voc: 48, vmp: 40, isc: 15, imp: 14 },
+              stringId: null,
+              stringOrder: null,
+              mpptId: null,
+              inverterIndex: null,
+              neighbors: { north: null, south: null, east: null, west: null }
+            });
+          }
+        }
+      }
+
+      // Limits: min 8, max 20, optimal 18
+      const limits = { minPanelsPerString: 8, maxPanelsPerString: 20, optimalPanelsPerString: 18 };
+      const partition = partitionPanelsIntoStrings(panels, 180, limits, { direction: 'short_side' });
+
+      // Each 14-panel block should form exactly 1 dedicated string (3 strings total)
+      expect(partition.stringGroups.length).toBe(3);
+      expect(partition.warnings.length).toBe(0);
+
+      const stringBlocks = partition.stringGroups.map(str => str[0].id.split('_')[0]).sort();
+      expect(stringBlocks).toEqual(['b0', 'b1', 'b2']);
+
+      partition.stringGroups.forEach(strPanels => {
+        expect(strPanels.length).toBe(14);
+        const blockPrefix = strPanels[0].id.split('_')[0];
+        // All panels in the string must belong strictly to this block
+        expect(strPanels.every(p => p.id.startsWith(`${blockPrefix}_`))).toBe(true);
+
+        // Verify continuity: every consecutive panel step in the string must be physically adjacent (<= 2.5m)
+        for (let i = 0; i < strPanels.length - 1; i++) {
+          const d = calculateGeodeticDistanceM(strPanels[i].centroid, strPanels[i + 1].centroid);
+          expect(d).toBeLessThanOrEqual(2.5); // Never jumps across aisle (~2m) or skips rows
+        }
+      });
+    });
+
+    it('guarantees short_side serpentine traversal does not leave rows stranded', () => {
+      // 1 single block of 2 rows x 4 columns = 8 panels
+      const panels: SolarPanelObject[] = [];
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 4; c++) {
+          panels.push({
+            id: `r${r}_c${c}`,
+            systemId: 'sys-1',
+            zoneId: 'zone-1',
+            moduleId: 'mod-1',
+            rowIndex: r,
+            colIndex: c,
+            centroid: localMetricToLatLng({ x: c * 1.134, y: r * 2.382 }, origin),
+            corners: [origin, origin, origin, origin],
+            azimuthDeg: 180,
+            tiltDeg: 15,
+            orientation: 'portrait',
+            widthM: 1.134,
+            lengthM: 2.382,
+            projectedDepthM: 2.3,
+            active: true,
+            electrical: { modelName: 'M', nominalPowerW: 600, voc: 48, vmp: 40, isc: 15, imp: 14 },
+            stringId: null,
+            stringOrder: null,
+            mpptId: null,
+            inverterIndex: null,
+            neighbors: { north: null, south: null, east: null, west: null }
+          });
+        }
+      }
+
+      const limits = { minPanelsPerString: 6, maxPanelsPerString: 20, optimalPanelsPerString: 16 };
+      const res = partitionPanelsIntoStrings(panels, 180, limits, { direction: 'short_side' });
+
+      expect(res.stringGroups.length).toBe(1);
+      const str = res.stringGroups[0];
+      expect(str.length).toBe(8);
+
+      // Verify every consecutive pair is adjacent
+      for (let i = 0; i < str.length - 1; i++) {
+        const d = calculateGeodeticDistanceM(str[i].centroid, str[i + 1].centroid);
+        expect(d).toBeLessThanOrEqual(2.5);
+      }
+    });
+
+    it('divides oversized blocks (> maxPanelsPerString) into balanced strings contained inside the block', () => {
+      // 1 block of 2 rows x 14 columns = 28 panels
+      const panels: SolarPanelObject[] = [];
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 14; c++) {
+          panels.push({
+            id: `r${r}_c${c}`,
+            systemId: 'sys-1',
+            zoneId: 'zone-1',
+            moduleId: 'mod-1',
+            rowIndex: r,
+            colIndex: c,
+            centroid: localMetricToLatLng({ x: c * 1.134, y: r * 2.382 }, origin),
+            corners: [origin, origin, origin, origin],
+            azimuthDeg: 180,
+            tiltDeg: 15,
+            orientation: 'portrait',
+            widthM: 1.134,
+            lengthM: 2.382,
+            projectedDepthM: 2.3,
+            active: true,
+            electrical: { modelName: 'M', nominalPowerW: 600, voc: 48, vmp: 40, isc: 15, imp: 14 },
+            stringId: null,
+            stringOrder: null,
+            mpptId: null,
+            inverterIndex: null,
+            neighbors: { north: null, south: null, east: null, west: null }
+          });
+        }
+      }
+
+      // Max 20 panels per string -> 28 panels divides into 2 balanced strings of 14 panels
+      const limits = { minPanelsPerString: 8, maxPanelsPerString: 20, optimalPanelsPerString: 18 };
+      const res = partitionPanelsIntoStrings(panels, 180, limits, { direction: 'short_side' });
+
+      expect(res.stringGroups.length).toBe(2);
+      expect(res.stringGroups[0].length).toBe(14);
+      expect(res.stringGroups[1].length).toBe(14);
+
+      // Each sub-string is continuous
+      for (const str of res.stringGroups) {
+        for (let i = 0; i < str.length - 1; i++) {
+          const d = calculateGeodeticDistanceM(str[i].centroid, str[i + 1].centroid);
+          expect(d).toBeLessThanOrEqual(2.5);
+        }
+      }
+    });
   });
 });

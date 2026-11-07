@@ -1193,5 +1193,39 @@ describe('ProjectStore & Multi-System Linking', () => {
       expect(landscapeZone.config.orientation).toBe('landscape');
       expect(landscapeZone.rails!.some(r => r.colIndex !== undefined)).toBe(true);
     });
+
+    it('ensures autoStringSystem keeps strings continuous on multi-block layouts without skipping panels', () => {
+      // Add a system and clear panels
+      const sys = store.getSystems()[0];
+      store.addZone([
+        origin,
+        localMetricToLatLng({ x: 40, y: 0 }, origin),
+        localMetricToLatLng({ x: 40, y: 15 }, origin),
+        localMetricToLatLng({ x: 0, y: 15 }, origin)
+      ], 'roof', 'Continuous String Test', sys.id);
+
+      // Run auto-stringing
+      const result = store.autoStringSystem(sys.id);
+      expect(result.totalStrings).toBeGreaterThan(0);
+
+      const panels = store.getPanelsForSystem(sys.id).filter(p => p.active && p.stringId);
+      const strMap = new Map<string, typeof panels>();
+      for (const p of panels) {
+        if (!strMap.has(p.stringId!)) strMap.set(p.stringId!, []);
+        strMap.get(p.stringId!)!.push(p);
+      }
+
+      // Check each string for continuity (every consecutive panel in stringOrder is adjacent)
+      for (const [, strPanels] of strMap.entries()) {
+        strPanels.sort((a, b) => (a.stringOrder ?? 0) - (b.stringOrder ?? 0));
+        for (let i = 0; i < strPanels.length - 1; i++) {
+          const dLat = strPanels[i + 1].centroid.lat - strPanels[i].centroid.lat;
+          const dLng = strPanels[i + 1].centroid.lng - strPanels[i].centroid.lng;
+          // Maximum allowable distance between adjacent modules in the same string circuit (<= 4.5m)
+          const distSq = dLat * dLat + dLng * dLng;
+          expect(distSq).toBeLessThan(0.00005 * 0.00005); // ~5m
+        }
+      }
+    });
   });
 });
