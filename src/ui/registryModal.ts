@@ -8,14 +8,17 @@ import {
   GENERIC_INVERTER_PRESETS,
   MountType,
   AcPhaseType,
+  MdpTapType,
   STANDARD_AC_VOLTAGES_3PHASE,
   STANDARD_AC_VOLTAGES_1PHASE
 } from '../types/solar';
 import { MapController } from '../map/mapController';
 import { calculateGeodeticDistanceM, computePolygonAreaSqM, computePolygonCentroid } from '../geo/projection';
 import { SingleLineDiagramUI } from './sldView';
+import { BoqAndDupaUI } from './boqView';
+import { exportBoqAndDupaCsv } from '../geo/boqCalculator';
 
-export type TableViewTab = 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld';
+export type TableViewTab = 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld' | 'boq';
 
 export class RegistryModalUI {
   private dialog: HTMLDialogElement;
@@ -204,6 +207,9 @@ export class RegistryModalUI {
         <button class="tbl-tab-btn ${this.activeTab === 'sld' ? 'active' : ''}" data-tab="sld">
           ⚡ Single Line Diagram
         </button>
+        <button class="tbl-tab-btn ${this.activeTab === 'boq' ? 'active' : ''}" data-tab="boq" style="color: #10b981; font-weight: bold;">
+          💰 BOQ &amp; DUPA
+        </button>
       </div>
 
       <!-- Universal System Filter Bar for Project Tables & Schedules -->
@@ -291,6 +297,9 @@ export class RegistryModalUI {
         break;
       case 'sld':
         contentHtml = this.renderSldTab(allSystems);
+        break;
+      case 'boq':
+        contentHtml = this.renderBoqTab(allSystems);
         break;
     }
 
@@ -520,6 +529,8 @@ export class RegistryModalUI {
               <th>MPPT & Strings</th>
               <th>DC/AC Ratio</th>
               <th>Station Point & &Delta;h</th>
+              <th>AC PCC Point & &Delta;h</th>
+              <th>AC Feeder & VDrop</th>
               <th>Total DC Wire</th>
               <th>Homerun</th>
               <th>Raceway</th>
@@ -529,11 +540,12 @@ export class RegistryModalUI {
           <tbody>
             ${
               filteredSystems.length === 0
-                ? `<tr><td colspan="13" class="empty-table-cell">No systems found matching criteria.</td></tr>`
+                ? `<tr><td colspan="15" class="empty-table-cell">No systems found matching criteria.</td></tr>`
                 : filteredSystems
                     .map(sys => {
                       const summary = this.store.getSystemSummary(sys.id);
                       const cableSummary = this.store.getSystemCableSummary(sys.id);
+                      const feederSummary = this.store.getSystemAcFeederSummary(sys.id);
                       const linkedZones = this.store.getZones().filter(z => z.systemId === sys.id);
                       const dcAcClass = summary.dcAcRatio > 1.35 ? 'warning' : 'highlight';
 
@@ -576,11 +588,30 @@ export class RegistryModalUI {
                           <option value="three_phase" ${(sys.inverter.phase || 'three_phase') === 'three_phase' ? 'selected' : ''}>3Φ</option>
                           <option value="single_phase" ${(sys.inverter.phase || 'three_phase') === 'single_phase' ? 'selected' : ''}>1Φ</option>
                         </select>
-                        <select class="input-tbl-select sel-sys-inv-voltage" data-sys-id="${sys.id}" title="Nominal AC Line Voltage" style="width: 65px; font-size: 11px;">
+                        <select class="input-tbl-select sel-sys-inv-voltage" data-sys-id="${sys.id}" title="Nominal Inverter AC Line Voltage" style="width: 65px; font-size: 11px;">
                           ${((sys.inverter.phase || 'three_phase') === 'single_phase' ? STANDARD_AC_VOLTAGES_1PHASE : STANDARD_AC_VOLTAGES_3PHASE).map((v: number) => `
                             <option value="${v}" ${(sys.inverter.acVoltage || ((sys.inverter.phase || 'three_phase') === 'single_phase' ? 230 : 400)) === v ? 'selected' : ''}>${v}V</option>
                           `).join('')}
                           <option value="custom" ${!STANDARD_AC_VOLTAGES_3PHASE.concat(STANDARD_AC_VOLTAGES_1PHASE).includes(sys.inverter.acVoltage || 400) ? 'selected' : ''}>Custom</option>
+                        </select>
+                      </div>
+                      <div style="display: flex; gap: 4px; align-items: center; margin-top: 3px;">
+                        <small class="text-dim" style="font-size: 10px;">Tap:</small>
+                        <select class="input-tbl-select sel-sys-tap-voltage" data-sys-id="${sys.id}" title="System Tapping Point Voltage (PEC 4.50)" style="width: 65px; font-size: 11px;">
+                          ${((sys.inverter.phase || 'three_phase') === 'single_phase' ? STANDARD_AC_VOLTAGES_1PHASE : STANDARD_AC_VOLTAGES_3PHASE).map((v: number) => `
+                            <option value="${v}" ${(sys.systemVoltageV ?? sys.inverter.acVoltage ?? ((sys.inverter.phase || 'three_phase') === 'single_phase' ? 230 : 400)) === v ? 'selected' : ''}>${v}V</option>
+                          `).join('')}
+                        </select>
+                        ${feederSummary.hasTransformer ? `<span class="badge warning" title="Transformer Required: ${feederSummary.transformerKva}kVA" style="font-size: 9px; padding: 1px 4px;">⚡ XFM ${feederSummary.transformerKva}kVA</span>` : ''}
+                      </div>
+                      <div style="display: flex; gap: 6px; align-items: center; margin-top: 3px; font-size: 10px;">
+                        <label title="Enable AC Combiner Box" style="display: flex; align-items: center; gap: 2px; cursor: pointer;">
+                          <input type="checkbox" class="chk-sys-ac-combiner" data-sys-id="${sys.id}" ${sys.hasAcCombiner ? 'checked' : ''} />
+                          <span>ACB</span>
+                        </label>
+                        <select class="input-tbl-select sel-sys-mdp-tap" data-sys-id="${sys.id}" title="MDP Interconnection Tap Type" style="font-size: 10px; padding: 1px 2px;">
+                          <option value="load_side" ${(sys.mdpTapType || 'load_side') === 'load_side' ? 'selected' : ''}>Load-Side (120%)</option>
+                          <option value="line_side" ${(sys.mdpTapType || 'load_side') === 'line_side' ? 'selected' : ''}>Line-Side (Supply)</option>
                         </select>
                       </div>
                     </td>
@@ -607,6 +638,25 @@ export class RegistryModalUI {
                       }
                     </td>
                     <td>
+                      ${
+                        sys.acInterconnectionLocation
+                          ? `<div class="inline-field-pair">
+                              <span class="badge accent" title="PCC Coords">🏢 ${sys.acInterconnectionLocation.lat.toFixed(4)}, ${sys.acInterconnectionLocation.lng.toFixed(4)}</span>
+                              <span class="tbl-unit-label">&Delta;h:</span>
+                              <input type="number" class="input-tbl-num input-tbl-sys-pcc-elev" data-sys-id="${sys.id}" value="${sys.acInterconnectionElevationM ?? 0}" step="0.5" title="AC Interconnection Base Elevation (m)" style="width: 48px;" /><span class="tbl-unit-label">m</span>
+                            </div>`
+                          : `<span class="text-dim">Not pinned</span>`
+                      }
+                    </td>
+                    <td>
+                      ${
+                        feederSummary.totalRunM > 0
+                          ? `<div><b>${feederSummary.totalRunM} m</b> <span class="badge ${feederSummary.isCompliant ? 'highlight' : 'warning'}">${feederSummary.voltageDropPercent}% Vd</span></div>
+                             <small class="text-dim">${feederSummary.conductorCallout.split(' + ')[0]}</small>`
+                          : `<span class="text-dim">—</span>`
+                      }
+                    </td>
+                    <td>
                       <strong style="color: var(--accent-green);">${cableSummary.totalCableLengthM} m</strong>
                     </td>
                     <td>
@@ -621,6 +671,7 @@ export class RegistryModalUI {
                     </td>
                     <td style="text-align: right; white-space: nowrap;">
                       <button class="btn btn-xs btn-jump-inverter" data-sys-id="${sys.id}" ${sys.inverterLocation ? '' : 'disabled'} title="Zoom to Inverter Station point">🎯 Station</button>
+                      <button class="btn btn-xs btn-jump-pcc" data-sys-id="${sys.id}" ${sys.acInterconnectionLocation ? '' : 'disabled'} title="Zoom to AC PCC point">🎯 PCC</button>
                       <button class="btn btn-xs btn-select-system" data-sys-id="${sys.id}" title="Select this system">✏️ Select</button>
                       <button class="btn btn-xs btn-primary btn-auto-string-system" data-sys-id="${sys.id}" title="Auto-string all arrays in this system">⚡ Auto-String</button>
                     </td>
@@ -785,6 +836,85 @@ export class RegistryModalUI {
                     })
                     .join('')
             }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- AC Feeder Raceways Schedule (Inverter to PCC Interconnection) -->
+      <div style="margin-top: 24px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+        <h4 style="margin: 0; font-size: 13px; color: #06b6d4; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+          <span>⚡</span> AC FEEDER RACEWAYS &amp; INTERCONNECTION SCHEDULE (PEC Article 2.15)
+        </h4>
+        <span class="badge highlight">${systems.length} Systems Configured</span>
+      </div>
+
+      <div tabindex="0" role="region" aria-label="AC Feeder Raceways Table" class="table-container table-wrapper">
+        <table class="registry-table responsive-data-table">
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>AC Interconnection (PCC)</th>
+              <th>Status</th>
+              <th>Waypoints</th>
+              <th>Route Length</th>
+              <th>Elevation (&Delta;h)</th>
+              <th>Total Feeder Run</th>
+              <th>Conductor Sizing (PEC 75°C)</th>
+              <th>Conduit (EMT/RMC)</th>
+              <th>V-Drop (% &amp; V)</th>
+              <th>PEC 2.15 Limit</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${systems.map(s => {
+              const feeder = this.store.getSystemAcFeederSummary(s.id);
+              return `
+                <tr>
+                  <td>
+                    <div class="entity-badge-cell">
+                      <span class="color-dot" style="background-color: ${s.color};"></span>
+                      <b>${s.name}</b>
+                    </div>
+                  </td>
+                  <td>
+                    ${s.acInterconnectionLocation ? `<span class="badge accent">🏢 ${s.acInterconnectionLocation.lat.toFixed(4)}, ${s.acInterconnectionLocation.lng.toFixed(4)}</span>` : '<span class="text-dim">Not pinned</span>'}
+                  </td>
+                  <td>
+                    ${feeder.hasRaceway ? '<span class="badge highlight">⚡ AC Feeder Drawn</span>' : s.acInterconnectionLocation && s.inverterLocation ? '<span class="badge">Direct Route</span>' : '<span class="badge warning">No Route</span>'}
+                  </td>
+                  <td>
+                    ${s.acRaceway ? `<b>${s.acRaceway.path.length}</b> nodes` : '<span class="text-dim">—</span>'}
+                  </td>
+                  <td>
+                    ${feeder.racewayLengthM > 0 ? `<b>${feeder.racewayLengthM.toFixed(1)} m</b>` : '<span class="text-dim">—</span>'}
+                  </td>
+                  <td>
+                    ${feeder.elevationDeltaM} m
+                  </td>
+                  <td>
+                    <strong style="color: var(--accent-green);">${feeder.totalRunM} m</strong>
+                  </td>
+                  <td>
+                    <small style="color: #38bdf8; font-weight: 600;">${feeder.conductorCallout}</small>
+                  </td>
+                  <td>
+                    <small>${feeder.conduitCallout}</small>
+                  </td>
+                  <td>
+                    <strong style="color: ${feeder.isCompliant ? '#10b981' : '#ef4444'};">${feeder.voltageDropPercent}% (${feeder.voltageDropV}V)</strong>
+                  </td>
+                  <td>
+                    <span class="badge ${feeder.isCompliant ? 'highlight' : 'danger'}">${feeder.isCompliant ? '✅ ≤3% OK' : '⚠️ >3% Drop'}</span>
+                  </td>
+                  <td style="text-align: right; white-space: nowrap;">
+                    <button class="btn btn-xs btn-outline accent btn-jump-ac-raceway" data-sys-id="${s.id}" ${s.acRaceway ? '' : 'disabled'} title="Zoom to AC Feeder">🎯 Feeder</button>
+                    <button class="btn btn-xs btn-outline warning btn-draw-ac-raceway-act" data-sys-id="${s.id}" title="Draw AC Feeder Raceway on satellite map">⚡ Draw Feeder</button>
+                    ${s.acRaceway ? `<button class="btn btn-xs btn-outline danger btn-clear-ac-raceway-act" data-sys-id="${s.id}" title="Delete AC Feeder">🗑️</button>` : ''}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
       </div>
@@ -1223,12 +1353,30 @@ export class RegistryModalUI {
     `;
   }
 
+  /**
+   * 8. BOQ & DUPA TAB VIEW
+   */
+  private renderBoqTab(_allSystems?: SolarSystem[]): string {
+    return `
+      <div class="modal-boq-wrapper" style="display: flex; flex-direction: column; overflow-y: auto; max-height: calc(85vh - 180px);">
+        <div id="modal-boq-mount" style="width: 100%;"></div>
+      </div>
+    `;
+  }
+
   private attachModalListeners(): void {
     if (this.activeTab === 'sld') {
       const mountEl = this.dialog.querySelector('#modal-sld-mount') as HTMLElement;
       if (mountEl) {
         const sldSysId = this.filterSystemId !== 'all' ? this.filterSystemId : this.store.getSelectedSystem()?.id;
         new SingleLineDiagramUI(mountEl, this.store, sldSysId);
+      }
+    }
+
+    if (this.activeTab === 'boq') {
+      const mountEl = this.dialog.querySelector('#modal-boq-mount') as HTMLElement;
+      if (mountEl) {
+        new BoqAndDupaUI(mountEl, this.store, this.filterSystemId);
       }
     }
 
@@ -1591,6 +1739,42 @@ export class RegistryModalUI {
       });
     });
 
+    this.dialog.querySelectorAll('.sel-sys-tap-voltage').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const target = e.currentTarget as HTMLSelectElement;
+        const sysId = target.getAttribute('data-sys-id');
+        if (sysId) {
+          const v = Number(target.value);
+          if (v > 0) {
+            this.store.updateSystem(sysId, { systemVoltageV: v });
+            this.render();
+          }
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.chk-sys-ac-combiner').forEach(chk => {
+      chk.addEventListener('change', e => {
+        const target = e.currentTarget as HTMLInputElement;
+        const sysId = target.getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.updateSystem(sysId, { hasAcCombiner: target.checked });
+          this.render();
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.sel-sys-mdp-tap').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const target = e.currentTarget as HTMLSelectElement;
+        const sysId = target.getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.updateSystem(sysId, { mdpTapType: target.value as MdpTapType });
+          this.render();
+        }
+      });
+    });
+
     this.dialog.querySelectorAll('.input-tbl-sys-inv-count').forEach(input => {
       input.addEventListener('change', e => {
         const target = e.currentTarget as HTMLInputElement;
@@ -1665,6 +1849,27 @@ export class RegistryModalUI {
       });
     });
 
+    this.dialog.querySelectorAll('.btn-jump-pcc').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const sysId = (e.currentTarget as HTMLElement).getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.selectSystem(sysId);
+          this.mapController?.zoomToAcInterconnection(sysId);
+          this.close();
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.input-tbl-sys-pcc-elev').forEach(input => {
+      input.addEventListener('change', e => {
+        const target = e.currentTarget as HTMLInputElement;
+        const sysId = target.getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.setSystemAcInterconnectionElevation(sysId, parseFloat(target.value) || 0);
+        }
+      });
+    });
+
     this.dialog.querySelectorAll('.btn-select-system').forEach(btn => {
       btn.addEventListener('click', e => {
         const sysId = (e.currentTarget as HTMLElement).getAttribute('data-sys-id');
@@ -1726,6 +1931,38 @@ export class RegistryModalUI {
         const zoneId = (e.currentTarget as HTMLElement).getAttribute('data-zone-id');
         if (zoneId && confirm('Clear this raceway path?')) {
           this.store.clearZoneRaceway(zoneId);
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.btn-jump-ac-raceway').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const sysId = (e.currentTarget as HTMLElement).getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.selectSystem(sysId);
+          this.mapController?.zoomToAcRaceway(sysId);
+          this.close();
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.btn-draw-ac-raceway-act').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const sysId = (e.currentTarget as HTMLElement).getAttribute('data-sys-id');
+        if (sysId) {
+          this.store.selectSystem(sysId);
+          this.store.setDrawingMode('ac_raceway');
+          this.close();
+        }
+      });
+    });
+
+    this.dialog.querySelectorAll('.btn-clear-ac-raceway-act').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const sysId = (e.currentTarget as HTMLElement).getAttribute('data-sys-id');
+        if (sysId && confirm('Clear AC Feeder raceway path?')) {
+          this.store.clearSystemAcRaceway(sysId);
+          this.render();
         }
       });
     });
@@ -2055,6 +2292,13 @@ export class RegistryModalUI {
             'Inverter_Lat',
             'Inverter_Lng',
             'Inverter_Elevation_M',
+            'AC_PCC_Lat',
+            'AC_PCC_Lng',
+            'AC_PCC_Elevation_M',
+            'AC_Feeder_Run_M',
+            'AC_Voltage_Drop_Percent',
+            'AC_Feeder_Conductor',
+            'PEC_2_15_Compliant',
             'Total_DC_Cable_M',
             'Total_Homerun_Cable_M',
             'Total_Raceway_Cable_M'
@@ -2069,6 +2313,7 @@ export class RegistryModalUI {
         for (const s of systems) {
           const sum = this.store.getSystemSummary(s.id);
           const cable = this.store.getSystemCableSummary(s.id);
+          const feeder = this.store.getSystemAcFeederSummary(s.id);
           const zCount = this.store.getZones().filter(z => z.systemId === s.id).length;
 
           rows.push([
@@ -2084,6 +2329,13 @@ export class RegistryModalUI {
             s.inverterLocation ? String(s.inverterLocation.lat) : '',
             s.inverterLocation ? String(s.inverterLocation.lng) : '',
             String(s.inverterElevationM ?? 0),
+            s.acInterconnectionLocation ? String(s.acInterconnectionLocation.lat) : '',
+            s.acInterconnectionLocation ? String(s.acInterconnectionLocation.lng) : '',
+            String(s.acInterconnectionElevationM ?? 0),
+            String(feeder.totalRunM),
+            String(feeder.voltageDropPercent),
+            feeder.conductorCallout,
+            feeder.isCompliant ? 'TRUE' : 'FALSE',
             String(cable.totalCableLengthM),
             String(cable.totalHomerunM),
             String(cable.totalRacewayLengthM)
@@ -2375,6 +2627,22 @@ export class RegistryModalUI {
           ]
         ];
         break;
+      }
+
+      case 'boq': {
+        const boq = this.store.getBoqState(this.filterSystemId);
+        const csvContent = exportBoqAndDupaCsv(this.store.projectName, boq);
+        filename = `${this.store.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}_BOQ_and_DUPA_${Date.now()}.csv`;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
       }
     }
 

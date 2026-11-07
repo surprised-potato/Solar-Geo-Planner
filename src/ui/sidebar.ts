@@ -19,7 +19,82 @@ export class SidebarUI {
   private render(): void {
     const zone = this.store.getSelectedZone();
     const zones = this.store.getZones();
+    const selectedZones = this.store.getSelectedZones();
+    const isMultiSelect = selectedZones.length > 1;
     const drawingMode = this.store.drawingMode;
+
+    if (isMultiSelect) {
+      const totalPanels = selectedZones.reduce((sum, z) => sum + z.activePanelCount, 0);
+      const totalKwp = Number(selectedZones.reduce((sum, z) => sum + z.totalKwp, 0).toFixed(2));
+
+      this.container.innerHTML = `
+        <div class="sidebar-header">
+          <div class="zone-title-row">
+            <span class="color-badge" style="background-color: #f59e0b;"></span>
+            <span style="font-weight: 700; font-size: 14px;">✨ ${selectedZones.length} Arrays Selected</span>
+            <button id="btn-sidebar-clear-sel" class="btn-icon" title="Clear Multi-Selection">✕</button>
+          </div>
+
+          <div class="zone-quick-stats">
+            <div class="stat-badge highlight">
+              <span class="label">Arrays</span>
+              <span class="val">${selectedZones.length}</span>
+            </div>
+            <div class="stat-badge">
+              <span class="label">Panels</span>
+              <span class="val">${totalPanels}</span>
+            </div>
+            <div class="stat-badge highlight">
+              <span class="label">DC Power</span>
+              <span class="val">${totalKwp} kWp</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-scrollable">
+          <div class="control-section">
+            <h4>✨ Batch Actions</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+              <button id="btn-sidebar-batch-opt" class="btn btn-primary full">⚡ Maximize & Auto-String ${selectedZones.length} Arrays</button>
+              <button id="btn-sidebar-batch-del" class="btn btn-danger full">🗑️ Delete All ${selectedZones.length} Selected Arrays</button>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h4>Batch Setback</h4>
+            <div class="preset-buttons" style="display: flex; gap: 4px; margin-top: 6px;">
+              <button class="btn btn-sm btn-outline btn-sidebar-batch-setback" data-val="0.0">0m</button>
+              <button class="btn btn-sm btn-outline btn-sidebar-batch-setback" data-val="0.5">0.5m</button>
+              <button class="btn btn-sm btn-outline btn-sidebar-batch-setback" data-val="1.0">1.0m</button>
+              <button class="btn btn-sm btn-outline btn-sidebar-batch-setback" data-val="1.5">1.5m</button>
+            </div>
+          </div>
+
+          <div class="zone-list-section" style="margin-top: 12px;">
+            <h4>Selected Arrays</h4>
+            <div class="zone-list">
+              ${selectedZones
+                .map(
+                  z => `
+                <div class="zone-list-item selected" data-zone-id="${z.id}">
+                  <span class="color-badge" style="background-color: ${z.color}"></span>
+                  <div class="zone-meta" style="flex: 1;">
+                    <strong>${z.name}</strong>
+                    <small>${z.activePanelCount} panels &bull; ${z.totalKwp} kWp</small>
+                  </div>
+                  <small style="color: var(--accent-blue); font-size: 11px;">✓ Selected</small>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      this.attachBatchListeners();
+      return;
+    }
 
     if (!zone) {
       this.container.innerHTML = `
@@ -46,7 +121,7 @@ export class SidebarUI {
                 ${zones
                   .map(
                     z => `
-                  <div class="zone-list-item" data-zone-id="${z.id}">
+                  <div class="zone-list-item ${this.store.isZoneSelected(z.id) ? 'selected' : ''}" data-zone-id="${z.id}">
                     <span class="color-badge" style="background-color: ${z.color}"></span>
                     <div class="zone-meta">
                       <strong>${z.name}</strong>
@@ -364,9 +439,51 @@ export class SidebarUI {
 
     const zoneItems = this.container.querySelectorAll('.zone-list-item');
     zoneItems.forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
         const zoneId = item.getAttribute('data-zone-id');
-        if (zoneId) this.store.selectZone(zoneId);
+        const isMulti = (e as MouseEvent).shiftKey || (e as MouseEvent).ctrlKey || (e as MouseEvent).metaKey;
+        if (zoneId) this.store.selectZone(zoneId, isMulti);
+      });
+    });
+  }
+
+  private attachBatchListeners(): void {
+    document.getElementById('btn-sidebar-clear-sel')?.addEventListener('click', () => {
+      this.store.clearZoneSelection();
+    });
+
+    document.getElementById('btn-sidebar-batch-del')?.addEventListener('click', () => {
+      const count = this.store.selectedZoneIds.size;
+      if (confirm(`Delete all ${count} selected arrays and their solar modules?`)) {
+        this.store.deleteSelected();
+      }
+    });
+
+    document.getElementById('btn-sidebar-batch-opt')?.addEventListener('click', () => {
+      const res = this.store.optimizeSelectedZonesGridShift(12);
+      const diff = res.totalMaxPanels - res.totalPreviousPanels;
+      let msg = `🎉 Batch Grid Shift Optimized & Auto-Strung!\nOptimized ${res.optimizedCount} Selected Arrays\nTotal Fitted Panels: ${res.totalMaxPanels} (${diff >= 0 ? `+${diff}` : diff} panels)`;
+      if (res.totalStrings !== undefined) {
+        msg += `\n⚡ Auto-Strung into ${res.totalStrings} Strings!`;
+      }
+      alert(msg);
+    });
+
+    this.container.querySelectorAll<HTMLButtonElement>('.btn-sidebar-batch-setback').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = Number(btn.getAttribute('data-val'));
+        if (!isNaN(val)) {
+          this.store.updateSelectedZonesConfig({ setbackM: val });
+        }
+      });
+    });
+
+    const zoneItems = this.container.querySelectorAll('.zone-list-item');
+    zoneItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        const zoneId = item.getAttribute('data-zone-id');
+        const isMulti = (e as MouseEvent).shiftKey || (e as MouseEvent).ctrlKey || (e as MouseEvent).metaKey || true;
+        if (zoneId) this.store.selectZone(zoneId, isMulti);
       });
     });
   }

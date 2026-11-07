@@ -8,6 +8,7 @@ import { FirebaseSyncService } from './services/firebaseSync';
 import { localMetricToLatLng } from './geo/projection';
 import { BasemapProvider } from './types/solar';
 import { SingleLineDiagramUI } from './ui/sldView';
+import { BoqAndDupaUI } from './ui/boqView';
 
 // Initialize core store
 const store = new ProjectStore();
@@ -15,38 +16,42 @@ const store = new ProjectStore();
 // Initialize map controller
 const mapController = new MapController('map', store);
 
-// View switching between Map View and Single Line Diagram View
+// View switching between Map View, Single Line Diagram, and BOQ & Costing Workspace
 let sldView: SingleLineDiagramUI | null = null;
+let boqView: BoqAndDupaUI | null = null;
 
-function setMainView(view: 'map' | 'sld'): void {
+function setMainView(view: 'map' | 'sld' | 'boq'): void {
   const btnMap = document.getElementById('btn-view-map');
   const btnSld = document.getElementById('btn-view-sld');
+  const btnBoq = document.getElementById('btn-view-boq');
   const mapWorkspace = document.getElementById('map-workspace');
   const sldWorkspace = document.getElementById('sld-workspace');
+  const boqWorkspace = document.getElementById('boq-workspace');
+
+  btnMap?.classList.toggle('active', view === 'map');
+  btnMap?.setAttribute('aria-selected', String(view === 'map'));
+  btnSld?.classList.toggle('active', view === 'sld');
+  btnSld?.setAttribute('aria-selected', String(view === 'sld'));
+  btnBoq?.classList.toggle('active', view === 'boq');
+  btnBoq?.setAttribute('aria-selected', String(view === 'boq'));
+
+  if (mapWorkspace) mapWorkspace.style.display = view === 'map' ? 'block' : 'none';
+  if (sldWorkspace) sldWorkspace.style.display = view === 'sld' ? 'flex' : 'none';
+  if (boqWorkspace) boqWorkspace.style.display = view === 'boq' ? 'flex' : 'none';
 
   if (view === 'map') {
-    btnMap?.classList.add('active');
-    btnMap?.setAttribute('aria-selected', 'true');
-    btnSld?.classList.remove('active');
-    btnSld?.setAttribute('aria-selected', 'false');
-
-    if (mapWorkspace) mapWorkspace.style.display = 'block';
-    if (sldWorkspace) sldWorkspace.style.display = 'none';
-
     mapController.invalidateSize();
-  } else {
-    btnMap?.classList.remove('active');
-    btnMap?.setAttribute('aria-selected', 'false');
-    btnSld?.classList.add('active');
-    btnSld?.setAttribute('aria-selected', 'true');
-
-    if (mapWorkspace) mapWorkspace.style.display = 'none';
-    if (sldWorkspace) sldWorkspace.style.display = 'flex';
-
+  } else if (view === 'sld') {
     if (!sldView) {
       sldView = new SingleLineDiagramUI('sld-workspace-mount', store);
     } else {
       sldView.render();
+    }
+  } else if (view === 'boq') {
+    if (!boqView) {
+      boqView = new BoqAndDupaUI('boq-workspace-mount', store);
+    } else {
+      boqView.render();
     }
   }
 }
@@ -56,17 +61,21 @@ const ribbon = new RibbonUI('ribbon', store, mapController, (view) => setMainVie
 new InspectorUI('inspector', store, mapController);
 new RegistryModalUI('registryModal', store, mapController);
 
+document.getElementById('btn-open-boq')?.addEventListener('click', () => {
+  setMainView('boq');
+});
+
 // Attach Main View Tabs listeners
 document.getElementById('btn-view-map')?.addEventListener('click', () => {
   setMainView('map');
-  if (ribbon.getActiveTab() === 'sld') {
-    ribbon.setActiveTab('orientation');
-  }
 });
 
 document.getElementById('btn-view-sld')?.addEventListener('click', () => {
   setMainView('sld');
-  ribbon.setActiveTab('sld');
+});
+
+document.getElementById('btn-view-boq')?.addEventListener('click', () => {
+  setMainView('boq');
 });
 
 // Initialize Cloud Sync & Multi-PC Project Management
@@ -128,10 +137,7 @@ document.addEventListener('click', (e) => {
 });
 
 const ensureMapViewForDrafting = () => {
-  if (ribbon.getActiveTab() === 'sld') {
-    setMainView('map');
-    ribbon.setActiveTab('orientation');
-  }
+  setMainView('map');
 };
 
 document.getElementById('btn-hdr-draw-roof')?.addEventListener('click', () => {

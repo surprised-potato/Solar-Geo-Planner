@@ -450,5 +450,63 @@ describe('Table View Schedules & Properties', () => {
         (globalThis as any).document = originalDocument;
       }
     });
+
+    it('pins AC Interconnection (PCC) and computes feeder metrics per Philippine Electrical Code', () => {
+      const sys = store.getSystems()[0];
+
+      // 1. Set Inverter Station location & elevation
+      const invPoint = { lat: 37.77490, lng: -122.41940 };
+      store.setSystemInverterLocation(sys.id, invPoint, 5);
+
+      // 2. Pin AC Point of Common Coupling (PCC) location & elevation
+      const pccPoint = { lat: 37.77530, lng: -122.41940 };
+      store.setSystemAcInterconnectionLocation(sys.id, pccPoint, 2);
+
+      const updatedSys = store.getSystem(sys.id)!;
+      expect(updatedSys.acInterconnectionLocation).toEqual(pccPoint);
+      expect(updatedSys.acInterconnectionElevationM).toBe(2);
+
+      // 3. Check AC Feeder Summary before drawing raceway (direct fallback)
+      let feederSummary = store.getSystemAcFeederSummary(sys.id);
+      expect(feederSummary.directDistanceM).toBeGreaterThan(40);
+      expect(feederSummary.hasRaceway).toBe(false);
+      expect(feederSummary.totalRunM).toBeGreaterThanOrEqual(feederSummary.directDistanceM);
+      expect(feederSummary.voltageDropV).toBeGreaterThan(0);
+      expect(feederSummary.voltageDropPercent).toBeGreaterThan(0);
+      expect(feederSummary.isCompliant).toBe(true);
+
+      // 4. Draw AC Feeder Raceway
+      const acPath = [
+        invPoint,
+        { lat: 37.77510, lng: -122.41940 },
+        pccPoint
+      ];
+      store.setSystemAcRaceway(sys.id, acPath, 3);
+
+      feederSummary = store.getSystemAcFeederSummary(sys.id);
+      expect(feederSummary.hasRaceway).toBe(true);
+      expect(feederSummary.racewayLengthM).toBeGreaterThan(40);
+      expect(feederSummary.conductorCallout).toContain('THHN');
+      expect(feederSummary.conduitCallout).toMatch(/EMT|RMC|PVC/);
+
+      // 5. Test GeoJSON export includes AC Feeder and PCC features
+      const geoJsonStr = store.exportProjectGeoJson();
+      const geoJson = JSON.parse(geoJsonStr);
+      const pccFeature = geoJson.features.find((f: any) => f.properties.type === 'AcInterconnectionPCC');
+      const feederFeature = geoJson.features.find((f: any) => f.properties.type === 'AcFeederRaceway');
+
+      expect(pccFeature).toBeDefined();
+      expect(pccFeature.geometry.coordinates).toEqual([pccPoint.lng, pccPoint.lat]);
+      expect(feederFeature).toBeDefined();
+      expect(feederFeature.properties.racewayType).toBe('ac_feeder');
+      expect(feederFeature.geometry.coordinates.length).toBe(3);
+
+      // 6. Test clearing AC PCC & Raceway
+      store.clearSystemAcRaceway(sys.id);
+      expect(store.getSystem(sys.id)?.acRaceway).toBeNull();
+
+      store.clearSystemAcInterconnectionLocation(sys.id);
+      expect(store.getSystem(sys.id)?.acInterconnectionLocation).toBeNull();
+    });
   });
 });

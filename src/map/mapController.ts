@@ -20,6 +20,8 @@ export class MapController {
   private selectedHomerunSystemId: string | null = null;
   private selectedRacewayZoneId: string | null = null;
   private selectedInverterSystemId: string | null = null;
+  private selectedAcInterconnectionSystemId: string | null = null;
+  private selectedAcRacewaySystemId: string | null = null;
 
   private zoneLayerGroup: L.LayerGroup;
   private keepOutLayerGroup: L.LayerGroup;
@@ -31,7 +33,10 @@ export class MapController {
   private homerunLinesLayerGroup: L.LayerGroup;
   private racewayLayerGroup: L.LayerGroup;
   private racewayVertexGroup: L.LayerGroup;
+  private acRacewayGroup: L.LayerGroup;
+  private acRacewayVertexGroup: L.LayerGroup;
   private inverterStationGroup: L.LayerGroup;
+  private acInterconnectionGroup: L.LayerGroup;
   private vertexMarkersGroup: L.LayerGroup;
   private drawingPreviewLayer: L.Polyline | null = null;
   private drawingPoints: LatLngPoint[] = [];
@@ -158,7 +163,10 @@ export class MapController {
     this.homerunLinesLayerGroup = L.layerGroup().addTo(this.map);
     this.racewayLayerGroup = L.layerGroup().addTo(this.map);
     this.racewayVertexGroup = L.layerGroup().addTo(this.map);
+    this.acRacewayGroup = L.layerGroup().addTo(this.map);
+    this.acRacewayVertexGroup = L.layerGroup().addTo(this.map);
     this.inverterStationGroup = L.layerGroup().addTo(this.map);
+    this.acInterconnectionGroup = L.layerGroup().addTo(this.map);
     this.vertexMarkersGroup = L.layerGroup().addTo(this.map);
 
     this.setupMapEvents();
@@ -278,6 +286,26 @@ export class MapController {
     });
   }
 
+  public zoomToAcInterconnection(systemId: string): void {
+    const sys = this.store.getSystem(systemId);
+    if (!sys || !sys.acInterconnectionLocation) return;
+    this.map.flyTo([sys.acInterconnectionLocation.lat, sys.acInterconnectionLocation.lng], Math.max(this.map.getZoom(), 21), {
+      duration: 0.8
+    });
+  }
+
+  public zoomToAcRaceway(systemId: string): void {
+    const sys = this.store.getSystem(systemId);
+    if (!sys?.acRaceway || !sys.acRaceway.path || sys.acRaceway.path.length === 0) return;
+    const latlngs = sys.acRaceway.path.map((p: LatLngPoint) => [p.lat, p.lng] as [number, number]);
+    const bounds = L.latLngBounds(latlngs);
+    this.map.flyToBounds(bounds, {
+      padding: [40, 40],
+      duration: 1.0,
+      maxZoom: 21
+    });
+  }
+
   public zoomToRaceway(zoneId?: string, systemId?: string): void {
     const homerun = (zoneId ? this.store.getHomerunForZone(zoneId) : null)
       || this.store.getSystemHomerun(systemId);
@@ -357,11 +385,18 @@ export class MapController {
         return;
       }
 
-      if (this.store.drawingMode === 'none') {
-        const isTilePane = e.originalEvent.target === this.map.getContainer().querySelector('.leaflet-tile-pane');
-        if (isTilePane) {
-          this.clearMapSelection();
+      if (this.store.drawingMode === 'ac_interconnection') {
+        const pt: LatLngPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
+        const currentSys = this.store.getSelectedSystem() || this.store.getSystems()[0];
+        if (currentSys) {
+          this.store.setSystemAcInterconnectionLocation(currentSys.id, pt);
         }
+        this.store.setDrawingMode('none');
+        return;
+      }
+
+      if (this.store.drawingMode === 'none') {
+        this.clearMapSelection();
         return;
       }
 
@@ -383,6 +418,8 @@ export class MapController {
             ? '#38bdf8'
             : this.store.drawingMode === 'keepout'
             ? '#f43f5e'
+            : (this.store.drawingMode === 'ac_raceway' || this.store.drawingMode === 'ac_interconnection')
+            ? '#06b6d4'
             : '#f59e0b'; // Amber for raceway
         this.drawingPreviewLayer = L.polyline(
           pts.map(p => [p.lat, p.lng]),
@@ -456,6 +493,8 @@ export class MapController {
     this.selectedHomerunSystemId = null;
     this.selectedRacewayZoneId = null;
     this.selectedInverterSystemId = null;
+    this.selectedAcInterconnectionSystemId = null;
+    this.selectedAcRacewaySystemId = null;
     this.store.selectKeepOut(null);
     this.store.selectPanel(null);
     this.store.selectZone(null);
@@ -464,6 +503,14 @@ export class MapController {
   }
 
   public deleteSelectedElement(): boolean {
+    // 0. Solar Panel selected
+    if (this.store.selectedPanelId) {
+      const pid = this.store.selectedPanelId;
+      this.store.togglePanelActive(pid);
+      this.updateSelectionHud();
+      return true;
+    }
+
     // 1. Keep-out selected
     if (this.store.selectedKeepOutId) {
       const koId = this.store.selectedKeepOutId;
@@ -501,7 +548,25 @@ export class MapController {
       return true;
     }
 
-    // 5. Array Zones selected
+    // 5. AC PCC selected
+    if (this.selectedAcInterconnectionSystemId) {
+      const sysId = this.selectedAcInterconnectionSystemId;
+      this.store.clearSystemAcInterconnectionLocation(sysId);
+      this.selectedAcInterconnectionSystemId = null;
+      this.updateSelectionHud();
+      return true;
+    }
+
+    // 6. AC Raceway selected
+    if (this.selectedAcRacewaySystemId) {
+      const sysId = this.selectedAcRacewaySystemId;
+      this.store.clearSystemAcRaceway(sysId);
+      this.selectedAcRacewaySystemId = null;
+      this.updateSelectionHud();
+      return true;
+    }
+
+    // 7. Array Zones selected
     if (this.store.selectedZoneIds.size > 0 || this.store.selectedZoneId) {
       const res = this.store.deleteSelected();
       if (res) {
@@ -514,6 +579,10 @@ export class MapController {
   }
 
   public fitSelectedElement(): void {
+    if (this.store.selectedPanelId) {
+      this.zoomToPanel(this.store.selectedPanelId);
+      return;
+    }
     if (this.store.selectedKeepOutId) {
       for (const zone of this.store.getZones()) {
         const ko = zone.keepOuts.find(k => k.id === this.store.selectedKeepOutId);
@@ -567,6 +636,21 @@ export class MapController {
     const title = document.getElementById('hud-sel-title');
     const sub = document.getElementById('hud-sel-sub');
 
+    // 0. Solar Panel selected
+    if (this.store.selectedPanelId) {
+      const panel = this.store.getSelectedPanel();
+      if (panel) {
+        hud.hidden = false;
+        if (badge) badge.textContent = '☀️';
+        if (title) title.textContent = `Panel ${panel.id}`;
+        const zone = this.store.getZone(panel.zoneId);
+        if (sub) {
+          sub.textContent = `Row ${panel.rowIndex}, Col ${panel.colIndex} • ${panel.electrical.nominalPowerW}W • ${zone?.name || 'Array'}${panel.stringId ? ` • String ${panel.stringId}` : ''}`;
+        }
+        return;
+      }
+    }
+
     // 1. Keep-out selected
     if (this.store.selectedKeepOutId) {
       for (const zone of this.store.getZones()) {
@@ -618,6 +702,32 @@ export class MapController {
       }
     }
 
+    // 5. AC PCC Selected
+    if (this.selectedAcInterconnectionSystemId) {
+      const sys = this.store.getSystem(this.selectedAcInterconnectionSystemId);
+      if (sys && sys.acInterconnectionLocation) {
+        hud.hidden = false;
+        if (badge) badge.textContent = '🏢';
+        if (title) title.textContent = `AC Point of Common Coupling (${sys.name})`;
+        const feeder = this.store.getSystemAcFeederSummary(sys.id);
+        if (sub) sub.textContent = `PCC Grid Interconnection • Elev: ${sys.acInterconnectionElevationM ?? 0}m • Run: ${feeder.totalRunM}m (${feeder.voltageDropPercent}% drop)`;
+        return;
+      }
+    }
+
+    // 6. AC Raceway Selected
+    if (this.selectedAcRacewaySystemId) {
+      const sys = this.store.getSystem(this.selectedAcRacewaySystemId);
+      if (sys && sys.acRaceway) {
+        hud.hidden = false;
+        if (badge) badge.textContent = '⚡';
+        if (title) title.textContent = `AC Feeder Conduit (${sys.name})`;
+        const feeder = this.store.getSystemAcFeederSummary(sys.id);
+        if (sub) sub.textContent = `AC Feeder • ${sys.acRaceway.path.length} nodes • Run: ${feeder.totalRunM}m • Vdrop: ${feeder.voltageDropPercent}%`;
+        return;
+      }
+    }
+
     // 5. Multi-selected zones
     if (this.store.selectedZoneIds.size > 1) {
       hud.hidden = false;
@@ -663,11 +773,11 @@ export class MapController {
     const btnFinish = document.getElementById('btn-hud-finish-draw') as HTMLButtonElement | null;
 
     const count = this.drawingPoints.length;
-    const minPoints = mode === 'raceway' ? 2 : 3;
+    const minPoints = (mode === 'raceway' || mode === 'ac_raceway') ? 2 : 3;
 
     if (btnFinish) {
       btnFinish.disabled = count < minPoints;
-      btnFinish.style.display = mode === 'inverter' ? 'none' : '';
+      btnFinish.style.display = (mode === 'inverter' || mode === 'ac_interconnection') ? 'none' : '';
     }
 
     if (mode === 'zone') {
@@ -692,9 +802,19 @@ export class MapController {
           ? 'Click map to place conduit start & route'
           : `${count} points placed. Double-click or click Finish when done.`;
       }
+    } else if (mode === 'ac_raceway') {
+      if (title) title.textContent = '⚡ Drawing AC Feeder Raceway';
+      if (hint) {
+        hint.textContent = count === 0
+          ? 'Click map along conduit path from Inverter Station to PCC'
+          : `${count} points placed. Double-click or click Finish when done.`;
+      }
     } else if (mode === 'inverter') {
       if (title) title.textContent = '⚡ Placing Inverter Power House';
       if (hint) hint.textContent = 'Click anywhere on map to set power station position.';
+    } else if (mode === 'ac_interconnection') {
+      if (title) title.textContent = '🏢 Placing AC Point of Common Coupling (PCC)';
+      if (hint) hint.textContent = 'Click on satellite map to place the utility grid / transformer interconnection point.';
     }
   }
 
@@ -720,7 +840,7 @@ export class MapController {
 
   public finishDrawing(): void {
     const mode = this.store.drawingMode;
-    const minPoints = mode === 'raceway' ? 2 : 3;
+    const minPoints = (mode === 'raceway' || mode === 'ac_raceway') ? 2 : 3;
 
     if (this.drawingPoints.length < minPoints) {
       this.cancelDrawing();
@@ -767,6 +887,14 @@ export class MapController {
         this.selectedHomerunSystemId = targetSystem.id;
         this.store.selectSystem(targetSystem.id);
       }
+    } else if (mode === 'ac_raceway') {
+      const targetSystem = this.store.getSelectedSystem() || this.store.getSystems()[0];
+      if (targetSystem) {
+        const elev = Math.abs((targetSystem.acInterconnectionElevationM ?? 0) - (targetSystem.inverterElevationM ?? 0));
+        this.store.setSystemAcRaceway(targetSystem.id, points, elev);
+        this.selectedAcRacewaySystemId = targetSystem.id;
+        this.store.selectSystem(targetSystem.id);
+      }
     }
   }
 
@@ -789,8 +917,10 @@ export class MapController {
     this.renderPanels();
     this.renderTiltArrows();
     this.renderRaceways();
+    this.renderAcRaceways();
     this.renderStringLines();
     this.renderInverterStations();
+    this.renderAcInterconnections();
     if (!this.isInteractingMapHandle) {
       this.renderVertexHandles();
     }
@@ -1421,6 +1551,304 @@ export class MapController {
     }
   }
 
+  private renderAcInterconnections(): void {
+    this.acInterconnectionGroup.clearLayers();
+    if (this.store.viewFilter.showInverters === false || this.store.viewFilter.xRayMode) return;
+
+    const systems = this.store.getSystems();
+    const selectedSysId = this.store.selectedSystemId;
+
+    for (const sys of systems) {
+      if (!sys.acInterconnectionLocation) continue;
+
+      const isSelected = sys.id === selectedSysId;
+      const feederSummary = this.store.getSystemAcFeederSummary(sys.id);
+
+      const icon = L.divIcon({
+        className: 'pcc-station-div-icon',
+        html: `
+          <div class="pcc-station-marker ${isSelected ? 'selected' : ''}">
+            <div class="pcc-pulse"></div>
+            <div class="pcc-badge">
+              <span class="pcc-icon">🏢</span>
+              <span class="pcc-title">${sys.name.split(':')[0]} PCC</span>
+            </div>
+            <div class="pcc-pole"></div>
+          </div>
+        `,
+        iconSize: [120, 48],
+        iconAnchor: [60, 46]
+      });
+
+      const marker = L.marker([sys.acInterconnectionLocation.lat, sys.acInterconnectionLocation.lng], {
+        icon,
+        draggable: true,
+        zIndexOffset: 1100
+      });
+
+      marker.on('dragend', (e: L.LeafletEvent) => {
+        const latlng = (e.target as L.Marker).getLatLng();
+        this.store.setSystemAcInterconnectionLocation(sys.id, { lat: latlng.lat, lng: latlng.lng });
+      });
+
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        this.selectedAcInterconnectionSystemId = sys.id;
+        this.selectedAcRacewaySystemId = null;
+        this.selectedInverterSystemId = null;
+        this.selectedHomerunSystemId = null;
+        this.selectedRacewayZoneId = null;
+        this.store.selectKeepOut(null);
+        this.store.selectSystem(sys.id);
+        this.updateSelectionHud();
+      });
+
+      marker.on('popupopen', () => {
+        const btnDel = document.querySelector(`.btn-del-pcc-loc[data-sys-id="${sys.id}"]`);
+        btnDel?.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.store.clearSystemAcInterconnectionLocation(sys.id);
+          this.selectedAcInterconnectionSystemId = null;
+          this.map.closePopup();
+          this.updateSelectionHud();
+        });
+      });
+
+      const popupContent = `
+        <div class="inverter-popup">
+          <h4 style="color: #06b6d4;">🏢 AC Point of Common Coupling (PCC)</h4>
+          <div class="inv-pop-row"><span>System:</span> <strong>${sys.name}</strong></div>
+          <div class="inv-pop-row"><span>Grid Voltage:</span> <strong>${feederSummary.voltageV}V (${feederSummary.phase === 'single_phase' ? '1Φ' : '3Φ'})</strong></div>
+          <div class="inv-pop-row"><span>Coords:</span> <small>${sys.acInterconnectionLocation.lat.toFixed(6)}, ${sys.acInterconnectionLocation.lng.toFixed(6)}</small></div>
+          <div class="inv-pop-row"><span>Base Elevation:</span> <strong>${sys.acInterconnectionElevationM ?? 0} m</strong></div>
+          <div class="inv-pop-divider"></div>
+          <div class="inv-pop-row"><span>Feeder Conductor:</span> <strong style="color: #38bdf8;">${feederSummary.conductorCallout}</strong></div>
+          <div class="inv-pop-row"><span>Feeder Conduit:</span> <strong>${feederSummary.conduitCallout}</strong></div>
+          <div class="inv-pop-row"><span>Total Feeder Run:</span> <strong style="color: var(--accent-green);">${feederSummary.totalRunM} m</strong></div>
+          <div class="inv-pop-row"><span>Calculated V-Drop:</span> <strong style="color: ${feederSummary.isCompliant ? '#10b981' : '#ef4444'};">${feederSummary.voltageDropPercent}% (${feederSummary.voltageDropV}V)</strong></div>
+          <div class="inv-pop-row"><span>PEC 2.15 Status:</span> <strong style="color: ${feederSummary.isCompliant ? '#10b981' : '#ef4444'};">${feederSummary.isCompliant ? '✅ COMPLIANT (≤3%)' : '⚠️ EXCEEDS 3%'}</strong></div>
+          <div class="inv-pop-actions" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-subtle, #334155); display: flex; justify-content: flex-end;">
+            <button type="button" class="btn btn-xs btn-outline danger btn-del-pcc-loc" data-sys-id="${sys.id}" title="Remove AC PCC location from map">🗑️ Remove Location</button>
+          </div>
+          <small class="inv-pop-hint">💡 Tip: Drag marker to reposition AC PCC and recalculate voltage drop</small>
+        </div>
+      `;
+      marker.bindPopup(popupContent, { className: 'solar-dark-popup' });
+
+      marker.bindTooltip(`<strong>🏢 ${sys.name} PCC Interconnection</strong><br/>${feederSummary.totalRunM}m Run &bull; ${feederSummary.voltageDropPercent}% V-Drop &bull; Drag to relocate`, {
+        direction: 'top',
+        offset: [0, -42],
+        className: 'solar-tooltip'
+      });
+
+      this.acInterconnectionGroup.addLayer(marker);
+    }
+  }
+
+  private renderAcRaceways(): void {
+    this.acRacewayGroup.clearLayers();
+    this.acRacewayVertexGroup.clearLayers();
+    const vf = this.store.viewFilter;
+    if (vf.showRaceways === false || vf.xRayMode) return;
+
+    const systems = this.store.getSystems();
+    const selectedSysId = this.store.selectedSystemId;
+
+    for (const sys of systems) {
+      const isSelected = sys.id === selectedSysId;
+      const feederSummary = this.store.getSystemAcFeederSummary(sys.id);
+      const acRaceway = sys.acRaceway;
+
+      if (acRaceway && acRaceway.path && acRaceway.path.length >= 2) {
+        const pathPts = acRaceway.path.map(p => [p.lat, p.lng] as [number, number]);
+
+        // Outer dark cyan casing
+        const casing = L.polyline(pathPts, {
+          color: '#083344',
+          weight: 7,
+          opacity: 0.9,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false
+        });
+
+        // Inner glowing electric cyan conduit
+        const conduit = L.polyline(pathPts, {
+          color: '#06b6d4',
+          weight: 3.5,
+          opacity: 1,
+          dashArray: '8, 4',
+          interactive: true
+        });
+
+        const popupContent = `
+          <div class="inverter-popup">
+            <h4 style="color: #06b6d4;">⚡ AC Feeder Raceway (${sys.name})</h4>
+            <div class="inv-pop-row"><span>Route Length:</span> <strong>${feederSummary.racewayLengthM} m</strong></div>
+            <div class="inv-pop-row"><span>Elevation Δh:</span> <strong>${feederSummary.elevationDeltaM} m</strong></div>
+            <div class="inv-pop-row"><span>Total Feeder Run:</span> <strong style="color: var(--accent-green);">${feederSummary.totalRunM} m</strong></div>
+            <div class="inv-pop-row"><span>Conductor:</span> <strong style="color: #38bdf8;">${feederSummary.conductorCallout}</strong></div>
+            <div class="inv-pop-row"><span>Conduit:</span> <strong>${feederSummary.conduitCallout}</strong></div>
+            <div class="inv-pop-divider"></div>
+            <div class="inv-pop-row"><span>Voltage Drop:</span> <strong style="color: ${feederSummary.isCompliant ? '#10b981' : '#ef4444'};">${feederSummary.voltageDropPercent}% (${feederSummary.voltageDropV}V)</strong></div>
+            <div class="inv-pop-row"><span>PEC 2.15 Limit:</span> <strong>${feederSummary.isCompliant ? '✅ Compliant (≤3%)' : '⚠️ Non-Compliant (>3%)'}</strong></div>
+          </div>
+        `;
+        conduit.bindPopup(popupContent, { className: 'solar-dark-popup' });
+        conduit.bindTooltip(`<strong>⚡ AC Feeder: ${sys.name}</strong><br/>${feederSummary.totalRunM}m Run • ${feederSummary.voltageDropPercent}% V-Drop • Click to inspect`, {
+          direction: 'top',
+          className: 'solar-tooltip'
+        });
+
+        conduit.on('click', (e: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(e);
+          this.selectedAcRacewaySystemId = sys.id;
+          this.selectedAcInterconnectionSystemId = null;
+          this.selectedInverterSystemId = null;
+          this.selectedHomerunSystemId = null;
+          this.selectedRacewayZoneId = null;
+          this.store.selectSystem(sys.id);
+          this.updateSelectionHud();
+        });
+
+        this.acRacewayGroup.addLayer(casing);
+        this.acRacewayGroup.addLayer(conduit);
+
+        // Entrance badge at start (Inverter station)
+        const startPt = acRaceway.path[0];
+        const startIcon = L.divIcon({
+          className: 'raceway-entrance-icon',
+          html: `<div class="raceway-marker-badge ac-feeder" title="AC Feeder Start at Inverter Station">⚡ INV AC OUT</div>`,
+          iconSize: [90, 20],
+          iconAnchor: [45, 10]
+        });
+        const startMarker = L.marker([startPt.lat, startPt.lng], { icon: startIcon, interactive: false });
+        this.acRacewayGroup.addLayer(startMarker);
+
+        // Exit badge at end (PCC point)
+        const endPt = acRaceway.path[acRaceway.path.length - 1];
+        const endIcon = L.divIcon({
+          className: 'raceway-entrance-icon',
+          html: `<div class="raceway-marker-badge ac-pcc" title="AC Feeder Arrival at PCC Grid">🏢 TO PCC GRID</div>`,
+          iconSize: [95, 20],
+          iconAnchor: [47, 10]
+        });
+        const endMarker = L.marker([endPt.lat, endPt.lng], { icon: endIcon, interactive: false });
+        this.acRacewayGroup.addLayer(endMarker);
+
+        // Interactive vertex handles when system is selected
+        if (isSelected && this.store.drawingMode === 'none' && this.store.viewFilter.showVertices !== false) {
+          const racewayPath = acRaceway.path;
+          racewayPath.forEach((pt, idx) => {
+            const isFirst = idx === 0;
+            const isLast = idx === racewayPath.length - 1;
+
+            const handleIcon = L.divIcon({
+              className: 'raceway-handle-container',
+              html: `<div class="raceway-node-pill ac-bend ${isFirst ? 'entrance' : isLast ? 'exit' : ''}" title="${isFirst ? 'AC Feeder Start' : isLast ? 'AC Feeder End' : `Bend #${idx + 1}`}"></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            });
+
+            const handle = L.marker([pt.lat, pt.lng], {
+              icon: handleIcon,
+              draggable: true,
+              zIndexOffset: 1200
+            });
+
+            handle.on('dragstart', () => {
+              this.isInteractingMapHandle = true;
+            });
+
+            handle.on('drag', (ev: L.LeafletEvent) => {
+              const m = ev.target as L.Marker;
+              const newPos = m.getLatLng();
+              const tempPath = [...acRaceway.path];
+              tempPath[idx] = { lat: newPos.lat, lng: newPos.lng };
+              const tempPts = tempPath.map(p => [p.lat, p.lng] as [number, number]);
+              casing.setLatLngs(tempPts);
+              conduit.setLatLngs(tempPts);
+              if (isFirst) startMarker.setLatLng([newPos.lat, newPos.lng]);
+              if (isLast) endMarker.setLatLng([newPos.lat, newPos.lng]);
+            });
+
+            handle.on('dragend', (ev: L.LeafletEvent) => {
+              this.isInteractingMapHandle = false;
+              const m = ev.target as L.Marker;
+              const newPos = m.getLatLng();
+              const updatedPath = [...acRaceway.path];
+              updatedPath[idx] = { lat: newPos.lat, lng: newPos.lng };
+              this.store.updateSystemAcRacewayVertices(sys.id, updatedPath);
+              this.renderAcRaceways();
+              this.updateSelectionHud();
+            });
+
+            handle.on('click', (ev: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(ev);
+              if (racewayPath.length > 2) {
+                if (confirm(`Delete AC Feeder node #${idx + 1}?`)) {
+                  this.store.deleteSystemAcRacewayVertex(sys.id, idx);
+                  this.renderAcRaceways();
+                  this.updateSelectionHud();
+                }
+              }
+            });
+
+            this.acRacewayVertexGroup.addLayer(handle);
+          });
+
+          // Midpoint '+' handles for inserting bends
+          for (let j = 0; j < racewayPath.length - 1; j++) {
+            const pA = racewayPath[j];
+            const pB = racewayPath[j + 1];
+            const midLat = (pA.lat + pB.lat) / 2;
+            const midLng = (pA.lng + pB.lng) / 2;
+
+            const midIcon = L.divIcon({
+              className: 'raceway-midpoint-icon',
+              html: `<div class="raceway-split-plus ac-plus" title="Click to insert bend node">+</div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            });
+
+            const midHandle = L.marker([midLat, midLng], {
+              icon: midIcon,
+              zIndexOffset: 1150
+            });
+
+            midHandle.on('click', (ev: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(ev);
+              this.store.addSystemAcRacewayVertex(sys.id, j, { lat: midLat, lng: midLng });
+              this.renderAcRaceways();
+              this.updateSelectionHud();
+            });
+
+            this.acRacewayVertexGroup.addLayer(midHandle);
+          }
+        }
+      } else if (sys.inverterLocation && sys.acInterconnectionLocation) {
+        // Direct AC Feeder guideline when no raceway is drawn yet
+        const invPt = sys.inverterLocation;
+        const pccPt = sys.acInterconnectionLocation;
+        const guideLine = L.polyline(
+          [[invPt.lat, invPt.lng], [pccPt.lat, pccPt.lng]],
+          {
+            color: '#06b6d4',
+            weight: 2,
+            dashArray: '5, 8',
+            opacity: 0.75,
+            interactive: true
+          }
+        );
+        guideLine.bindTooltip(`<strong>⚡ Direct AC Feeder Path (${feederSummary.directDistanceM}m)</strong><br/>V-Drop: ${feederSummary.voltageDropPercent}% (${feederSummary.voltageDropV}V) • Click '+ AC Feeder' to draw real conduit path`, {
+          direction: 'top',
+          className: 'solar-tooltip'
+        });
+        this.acRacewayGroup.addLayer(guideLine);
+      }
+    }
+  }
+
   private renderZones(): void {
     this.zoneLayerGroup.clearLayers();
     const zones = this.store.getZones();
@@ -1602,7 +2030,13 @@ export class MapController {
 
         poly.on('click', (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          this.store.selectZone(zone.id);
+          const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+          this.selectedHomerunSystemId = null;
+          this.selectedRacewayZoneId = null;
+          this.selectedInverterSystemId = null;
+          this.store.selectKeepOut(null);
+          this.store.selectZone(zone.id, isMulti);
+          this.updateSelectionHud();
         });
 
         this.tableRackLayerGroup.addLayer(poly);
@@ -1652,30 +2086,9 @@ export class MapController {
             weight: railWeight,
             opacity: railOpacity,
             lineCap: 'square',
-            interactive: true
+            interactive: false
           }
         );
-
-        const positionLabel =
-          rail.positionType === 'center'
-            ? 'Center Rail (50%)'
-            : rail.positionType === 'end_1'
-              ? 'Near End Rail 1 (20%)'
-              : 'Near End Rail 2 (80%)';
-
-        polyline.bindTooltip(
-          `<div class="solar-tooltip rail-tooltip">
-            <strong style="color: #38bdf8;">Roof Rail: ${positionLabel}</strong><br>
-            <span>Span: <b>${rail.lengthM.toFixed(2)} m</b></span> &bull; <span>${rail.panelIds.length} Panels</span><br>
-            <small style="color: #94a3b8;">${zone.name} &bull; Parallel to short side</small>
-          </div>`,
-          { sticky: true, className: 'solar-tooltip' }
-        );
-
-        polyline.on('click', (e: L.LeafletMouseEvent) => {
-          L.DomEvent.stopPropagation(e);
-          this.store.selectZone(zone.id);
-        });
 
         this.roofRailLayerGroup.addLayer(polyline);
 
@@ -1834,6 +2247,17 @@ export class MapController {
       }
 
       L.DomEvent.stopPropagation(e);
+      const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+      if (isMulti) {
+        this.selectedHomerunSystemId = null;
+        this.selectedRacewayZoneId = null;
+        this.selectedInverterSystemId = null;
+        this.store.selectKeepOut(null);
+        this.store.selectZone(panel.zoneId, true);
+        this.updateSelectionHud();
+        return;
+      }
+
       this.store.selectPanel(panel.id);
     });
 
@@ -1991,7 +2415,13 @@ export class MapController {
 
       badgeMarker.on('click', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e);
-        this.store.selectZone(zone.id);
+        const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+        this.selectedHomerunSystemId = null;
+        this.selectedRacewayZoneId = null;
+        this.selectedInverterSystemId = null;
+        this.store.selectKeepOut(null);
+        this.store.selectZone(zone.id, isMulti);
+        this.updateSelectionHud();
       });
 
       badgeMarker.bindTooltip(

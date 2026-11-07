@@ -58,7 +58,7 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
 
     // Check SVG container and 2D wireframe properties
     expect(svgStr).toContain('<svg');
-    expect(svgStr).toContain('viewBox="0 0 1750');
+    expect(svgStr).toContain('viewBox="0 0 2980');
     expect(svgStr).toContain('id="sldCadGrid"'); // 2D CAD engineering grid
     expect(svgStr).toContain('ELECTRICAL SINGLE LINE DIAGRAM (2D WIREFRAME)');
 
@@ -441,5 +441,185 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
   it('verifies TableViewTab includes sld tab for table schedules navigation', () => {
     const tab: TableViewTab = 'sld';
     expect(tab).toBe('sld');
+  });
+
+  it('zooms toward cursor location preserving the point under cursor', () => {
+    const selectedSys = store.getSelectedSystem()!;
+    const mockContainer = {
+      innerHTML: '',
+      querySelector: (sel: string) => {
+        if (sel === '#sld-canvas-viewport') {
+          return {
+            getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 600 }),
+            addEventListener: () => {},
+            style: {}
+          };
+        }
+        if (sel === '#sld-svg-element') {
+          return {
+            getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 600 }),
+            viewBox: { baseVal: { width: 2000, height: 1200 } }
+          };
+        }
+        if (sel === '#sld-viewport-group') {
+          return {
+            setAttribute: () => {}
+          };
+        }
+        if (sel === '#sld-zoom-badge') {
+          return { textContent: '' };
+        }
+        return null;
+      },
+      querySelectorAll: () => []
+    };
+
+    const sldUI = new SingleLineDiagramUI(mockContainer as any, store, selectedSys.id);
+    expect(sldUI.getZoomLevel()).toBe(1.0);
+    expect(sldUI.getPan()).toEqual({ x: 0, y: 0 });
+
+    // Cursor at (400, 300) screen pixels -> in SVG viewBox space (with scale 2000/1000 = 2), this is (800, 600)
+    const cursorClientX = 400;
+    const cursorClientY = 300;
+    const svgPointBefore = sldUI.clientToSvgPoint(cursorClientX, cursorClientY);
+    expect(svgPointBefore.x).toBe(800);
+    expect(svgPointBefore.y).toBe(600);
+
+    // Initial local point under cursor: (svgPoint - pan) / zoom = (800 - 0) / 1.0 = 800
+    const localXBefore = (svgPointBefore.x - sldUI.getPan().x) / sldUI.getZoomLevel();
+    const localYBefore = (svgPointBefore.y - sldUI.getPan().y) / sldUI.getZoomLevel();
+
+    // Zoom in at cursor location by 1.25x
+    sldUI.zoomIn(cursorClientX, cursorClientY);
+    expect(sldUI.getZoomLevel()).toBe(1.25);
+
+    // After zooming, the same SVG point under cursor must map to the EXACT same local point
+    const panAfter = sldUI.getPan();
+    const localXAfter = (svgPointBefore.x - panAfter.x) / sldUI.getZoomLevel();
+    const localYAfter = (svgPointBefore.y - panAfter.y) / sldUI.getZoomLevel();
+
+    expect(localXAfter).toBeCloseTo(localXBefore, 2);
+    expect(localYAfter).toBeCloseTo(localYBefore, 2);
+
+    // Zoom out at cursor location
+    sldUI.zoomOut(cursorClientX, cursorClientY);
+    expect(sldUI.getZoomLevel()).toBe(1.0);
+    expect(sldUI.getPan().x).toBeCloseTo(0, 1);
+    expect(sldUI.getPan().y).toBeCloseTo(0, 1);
+
+    // Reset zoom
+    sldUI.resetZoom();
+    expect(sldUI.getZoomLevel()).toBe(1.0);
+    expect(sldUI.getPan()).toEqual({ x: 0, y: 0 });
+  });
+
+  it('designs and renders a power transformer when inverter AC voltage does not match system voltage', () => {
+    const sys = store.getSelectedSystem()!;
+
+    // Inverter 400V 3Φ, Grid Tapping Point 230V 3Φ -> Transformer required
+    store.updateSystemInverter(sys.id, {
+      acVoltage: 400,
+      phase: 'three_phase',
+      ratedAcPowerKw: 100
+    });
+    store.updateSystem(sys.id, {
+      systemVoltageV: 230
+    });
+
+    const model = buildSldSystemModel(store, sys.id);
+    expect(model.transformerDesign.required).toBe(true);
+    expect(model.transformerDesign.type).toBe('step_down');
+    expect(model.transformerDesign.primaryVoltageV).toBe(400);
+    expect(model.transformerDesign.secondaryVoltageV).toBe(230);
+    expect(model.transformerDesign.transformerKva).toBe(125);
+
+    const sldUI = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svg = sldUI.generateWireframeSvg(model);
+
+    // Verify Transformer schematic elements in SVG
+    expect(svg).toContain('wireframe-transformer');
+    expect(svg).toContain('POWER TRANSFORMER');
+    expect(svg).toContain('125 kVA • STEP-DOWN');
+    expect(svg).toContain('Dyn11');
+    expect(svg).toContain('wireframe-xfm-pri-badge');
+    expect(svg).toContain('wireframe-xfm-sec-badge');
+    expect(svg).toContain('XFM SEC MCCB');
+    expect(svg).toContain('viewBox="0 0 3550'); // Dynamic SVG width expansion for transformer
+  });
+
+  it('renders AC Combiner Box collector breaker when enabled, and bypasses when disabled', () => {
+    const sys = store.getSelectedSystem()!;
+
+    // 1. With AC Combiner enabled
+    store.updateSystem(sys.id, {
+      hasAcCombiner: true
+    });
+    const modelWithComb = buildSldSystemModel(store, sys.id);
+    expect(modelWithComb.hasAcCombiner).toBe(true);
+    const sldUIWith = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svgWith = sldUIWith.generateWireframeSvg(modelWithComb);
+
+    expect(svgWith).toContain('wireframe-combiner-breaker');
+    expect(svgWith).toContain('COLLECTOR MCCB');
+    expect(svgWith).toContain('AC Combiner Box');
+
+    // 2. With AC Combiner disabled
+    store.updateSystem(sys.id, {
+      hasAcCombiner: false
+    });
+    const modelWithoutComb = buildSldSystemModel(store, sys.id);
+    expect(modelWithoutComb.hasAcCombiner).toBe(false);
+    const sldUIWithout = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svgWithout = sldUIWithout.generateWireframeSvg(modelWithoutComb);
+
+    expect(svgWithout).not.toContain('wireframe-combiner-breaker');
+    expect(svgWithout).not.toContain('COLLECTOR MCCB');
+  });
+
+  it('renders Main Distribution Panel (MDP) with Load-Side vs Line-Side Tap and indicates Facility Load tap', () => {
+    const sys = store.getSelectedSystem()!;
+
+    // 1. Load-Side Tap (PEC 6.90.8.2 / 120% Bus Rule)
+    store.updateSystem(sys.id, {
+      mdpTapType: 'load_side'
+    });
+    const modelLoad = buildSldSystemModel(store, sys.id);
+    const sldUILoad = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svgLoad = sldUILoad.generateWireframeSvg(modelLoad);
+
+    // MDP Enclosure and Sections
+    expect(svgLoad).toContain('wireframe-mdp-enclosure');
+    expect(svgLoad).toContain('MAIN DISTRIBUTION PANEL (MDP)');
+    expect(svgLoad).toContain('LOAD SIDE (FACILITY BUS)');
+    expect(svgLoad).toContain('LINE SIDE (UTILITY SERVICE)');
+    expect(svgLoad).toContain('MDP MAIN MCCB');
+
+    // Facility Load must be tapped on Load Side
+    expect(svgLoad).toContain('wireframe-facility-load');
+    expect(svgLoad).toContain('FACILITY LOAD');
+    expect(svgLoad).toContain('▲ TAPPED ON LOAD SIDE');
+
+    // Load side backfed breaker
+    expect(svgLoad).toContain('wireframe-pv-backfed-breaker');
+    expect(svgLoad).toContain('PV TIE MCCB');
+    expect(svgLoad).toContain('LOAD-SIDE TAP: PEC 6.90.8.2');
+
+    // 2. Line-Side Tap (PEC 6.90.8.1 / Supply-Side Tap Ahead of Main Breaker)
+    store.updateSystem(sys.id, {
+      mdpTapType: 'line_side'
+    });
+    const modelLine = buildSldSystemModel(store, sys.id);
+    const sldUILine = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svgLine = sldUILine.generateWireframeSvg(modelLine);
+
+    // Line side supply tap breaker
+    expect(svgLine).toContain('wireframe-pv-supply-breaker');
+    expect(svgLine).toContain('PV SUPPLY TAP CB');
+    expect(svgLine).toContain('SUPPLY TAP POINT');
+    expect(svgLine).toContain('LINE-SIDE TAP: PEC 6.90.8.1');
+
+    // Facility Load is still tapped on Load Side of MDP Main Breaker
+    expect(svgLine).toContain('FACILITY LOAD');
+    expect(svgLine).toContain('▲ TAPPED ON LOAD SIDE');
   });
 });

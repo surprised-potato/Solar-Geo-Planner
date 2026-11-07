@@ -11,19 +11,20 @@ import {
   AcPhaseType,
   MdpTapType,
   StringTraverseDirection,
-  SolarSystem
+  SolarSystem,
+  ArrayZone
 } from '../types/solar';
 import { MapController } from '../map/mapController';
 import { calculateGeodeticDistanceM } from '../geo/projection';
 import { sizePecTransformer, getRecommendedMdpMainBreaker } from '../geo/pecWireSizing';
 
-export type RibbonTab = 'orientation' | 'spacing' | 'obstacles' | 'module' | 'stringing' | 'ac' | 'views';
+export type RibbonTab = 'home' | 'orientation' | 'spacing' | 'obstacles' | 'module' | 'stringing' | 'ac' | 'views';
 
 export class RibbonUI {
   private container: HTMLElement;
   private store: ProjectStore;
   private mapController?: MapController;
-  private activeTab: RibbonTab = 'orientation';
+  private activeTab: RibbonTab = 'home';
   private isCollapsed: boolean = false;
   private isInteractingSlider: boolean = false;
   private onViewModeChange?: (view: 'map' | 'sld' | 'boq') => void;
@@ -87,145 +88,14 @@ export class RibbonUI {
     const totalSelectedPanels = selectedZones.reduce((sum, z) => sum + z.activePanelCount, 0);
     const totalSelectedKwp = Number(selectedZones.reduce((sum, z) => sum + z.totalKwp, 0).toFixed(2));
 
-    // Row 1: Ribbon Scope & Command Bar
-    const scopeBarHtml = `
-      <div class="ribbon-scope-bar">
-        <!-- Scope Breadcrumb: System & Array Context -->
-        <div class="ribbon-breadcrumb-trail">
-          <!-- System Pill -->
-          <div class="ribbon-scope-pill system-pill" title="Active Independent Electrical System">
-            <span class="system-color-dot" style="background-color: ${currentSystem?.color || '#0284c7'}; box-shadow: 0 0 6px ${currentSystem?.color || '#0284c7'}80;"></span>
-            <span class="scope-pill-label">System</span>
-            <select id="ribbon-system-select" class="ribbon-scope-select" aria-label="Select Active Electrical System">
-              ${systems
-                .map(
-                  s => `
-                <option value="${s.id}" ${currentSystem?.id === s.id ? 'selected' : ''}>
-                  ${s.name} (${s.zoneIds.length} ${s.zoneIds.length === 1 ? 'array' : 'arrays'} • ${s.inverter.inverterCount * s.inverter.ratedAcPowerKw}kW AC)
-                </option>
-              `
-                )
-                .join('')}
-            </select>
-            <button id="ribbon-btn-new-system" class="ribbon-pill-btn" title="Add new independent system">+ System</button>
-            <button id="ribbon-btn-edit-system" class="ribbon-pill-btn icon-only" title="Rename active system">✏️</button>
-          </div>
-
-          <span class="ribbon-breadcrumb-arrow" aria-hidden="true">›</span>
-
-          <!-- Array Zone Pill -->
-          <div class="ribbon-scope-pill zone-pill ${isMultiSelect ? 'multi-select-active' : ''}" title="${isMultiSelect ? `${selectedZones.length} arrays selected for batch editing` : 'Selected Solar Array Zone'}">
-            <span class="scope-pill-icon">${isMultiSelect ? '✨' : (zone ? (zone.config.mountType === 'ground' ? '🌱' : '🏠') : '📐')}</span>
-            <span class="scope-pill-label">${isMultiSelect ? `Batch (${selectedZones.length})` : 'Array'}</span>
-            ${
-              zones.length > 0
-                ? `
-              <select id="ribbon-zone-select" class="ribbon-scope-select" aria-label="Select Array Zone">
-                ${isMultiSelect ? `<option value="__batch__" selected>✨ All ${selectedZones.length} Selected Arrays</option>` : ''}
-                ${zones
-                  .map(
-                    z => `
-                  <option value="${z.id}" ${!isMultiSelect && zone?.id === z.id ? 'selected' : ''}>
-                    ${this.store.isZoneSelected(z.id) ? '✓ ' : ''}${z.name} [${this.store.getSystem(z.systemId)?.name?.split(':')[0] || 'Sys'}] (${z.activePanelCount}p • ${z.totalKwp}kWp)
-                  </option>
-                `
-                  )
-                  .join('')}
-              </select>
-              ${
-                zones.length > 1
-                  ? `<button id="ribbon-btn-select-all" class="ribbon-pill-btn" title="Select all arrays for batch editing">${isMultiSelect && selectedZones.length === zones.length ? 'Clear' : `Select All (${zones.length})`}</button>`
-                  : ''
-              }
-              <button id="ribbon-btn-zoom-array" class="ribbon-pill-btn" title="${isMultiSelect ? 'Zoom to fit all selected arrays' : 'Zoom map to fit this array'}">🎯 Fit</button>
-              <button id="ribbon-delete-zone" class="ribbon-pill-btn danger icon-only" title="${isMultiSelect ? 'Delete all selected arrays' : 'Delete current array'}">🗑️</button>
-            `
-                : `<span class="ribbon-no-zones">No Array Plotted</span>`
-            }
-          </div>
-        </div>
-
-        <!-- Center: CAD Quick Drafting Action Buttons -->
-        <div class="ribbon-drafting-actions">
-          <button id="ribbon-btn-new-roof" class="ribbon-draft-btn ${drawingMode === 'zone' && this.store.drawingMountType === 'roof' ? 'active-pulse' : ''}" title="Draw new rooftop array into active system">
-            <span class="draft-btn-icon">🏠</span>
-            <span>+ Roof</span>
-          </button>
-          <button id="ribbon-btn-new-ground" class="ribbon-draft-btn ${drawingMode === 'zone' && this.store.drawingMountType === 'ground' ? 'active-pulse' : ''}" title="Draw new ground mount array into active system">
-            <span class="draft-btn-icon">🌱</span>
-            <span>+ Ground</span>
-          </button>
-          <button id="ribbon-btn-new-ko" class="ribbon-draft-btn ${drawingMode === 'keepout' ? 'active-pulse' : ''}" title="Draw obstacle / keep-out exclusion zone">
-            <span class="draft-btn-icon">🚫</span>
-            <span>+ Obstacle</span>
-          </button>
-          <button id="ribbon-btn-new-raceway" class="ribbon-draft-btn ${drawingMode === 'raceway' ? 'active-pulse' : ''}" title="Draw shared homerun raceway trunk">
-            <span class="draft-btn-icon">🛤️</span>
-            <span>+ Homerun</span>
-          </button>
-          <button id="ribbon-btn-new-inverter" class="ribbon-draft-btn ${drawingMode === 'inverter' ? 'active-pulse' : ''}" title="Place inverter powerhouse on map">
-            <span class="draft-btn-icon">⚡</span>
-            <span>+ Inverter</span>
-          </button>
-          <button id="ribbon-btn-new-pcc" class="ribbon-draft-btn ${drawingMode === 'ac_interconnection' ? 'active-pulse' : ''}" title="Pin AC Interconnection Point (PCC) on satellite map">
-            <span class="draft-btn-icon">🏢</span>
-            <span>+ PCC</span>
-          </button>
-          <button id="ribbon-btn-new-ac-feeder" class="ribbon-draft-btn ${drawingMode === 'ac_raceway' ? 'active-pulse' : ''}" title="Draw AC Feeder Conduit from Inverter Station to PCC">
-            <span class="draft-btn-icon">⚡</span>
-            <span>+ AC Feeder</span>
-          </button>
-        </div>
-
-        <!-- Right: Telemetry & Collapse Control -->
-        <div class="ribbon-scope-right">
-          ${
-            isMultiSelect
-              ? `
-            <div class="ribbon-live-kpi-badge batch-kpi" title="Combined metrics for ${selectedZones.length} selected arrays">
-              <span class="kpi-metric highlight">✨ ${totalSelectedKwp} <small>kWp Total</small></span>
-              <span class="kpi-sep">•</span>
-              <span class="kpi-metric">${totalSelectedPanels} <small>Panels</small></span>
-              <span class="kpi-sep">•</span>
-              <span class="kpi-mount-tag">${selectedZones.length} ARRAYS</span>
-            </div>
-          `
-              : zone
-              ? `
-            <div class="ribbon-live-kpi-badge" title="Active array production metrics">
-              <span class="kpi-metric highlight">⚡ ${zone.totalKwp} <small>kWp</small></span>
-              <span class="kpi-sep">•</span>
-              <span class="kpi-metric">${zone.activePanelCount} <small>Panels</small></span>
-              <span class="kpi-sep">•</span>
-              <span class="kpi-mount-tag">${zone.config.mountType.toUpperCase()}</span>
-            </div>
-          `
-              : currentSystem
-              ? `
-            <div class="ribbon-live-kpi-badge" title="Active system overall capacity">
-              <span class="kpi-metric highlight">⚡ ${currentSystemSummary?.totalKwp || 0} <small>kWp Total</small></span>
-              <span class="kpi-sep">•</span>
-              <span class="kpi-metric">${currentSystemSummary?.totalActivePanels || 0} <small>Panels</small></span>
-            </div>
-          `
-              : ''
-          }
-
-          <button id="ribbon-toggle-collapse" class="ribbon-collapse-toggle ${this.isCollapsed ? 'is-collapsed' : ''}" title="${this.isCollapsed ? 'Expand Ribbon Controls' : 'Collapse Ribbon Controls'}" aria-expanded="${!this.isCollapsed}">
-            <svg class="collapse-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="${this.isCollapsed ? '6 9 12 15 18 9' : '18 15 12 9 6 15'}"></polyline>
-            </svg>
-            <span class="collapse-text">${this.isCollapsed ? 'Expand' : 'Collapse'}</span>
-          </button>
-        </div>
-      </div>
-    `;
-
     // Collapsed Mode: Slim bar with quick-jump tab buttons
     if (this.isCollapsed) {
       const collapsedTabsHtml = `
         <div class="ribbon-collapsed-strip">
           <div class="collapsed-quick-nav" role="tablist" aria-label="Quick Switch Tabs">
+            <button class="ribbon-tab-pill ${this.activeTab === 'home' ? 'active' : ''}" data-tab="home" title="Project Home: Systems, Arrays & Quick Tools">
+              <span>🏠</span> Home
+            </button>
             <button class="ribbon-tab-pill ${this.activeTab === 'orientation' ? 'active' : ''}" data-tab="orientation" ${!zone ? 'disabled' : ''}>
               <span>📐</span> Orientation (${zone ? zone.config.tiltDeg + '°' : '-'})
             </button>
@@ -248,19 +118,29 @@ export class RibbonUI {
               <span>👁️</span> Views (${this.getActivePresetLabel()})
             </button>
           </div>
-          <span class="ribbon-collapsed-hint">Click any section or Expand to inspect parameters</span>
+          <button id="ribbon-toggle-collapse" class="ribbon-collapse-toggle is-collapsed" style="margin-left: auto;" title="Expand Ribbon Controls" aria-expanded="false">
+            <svg class="collapse-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span class="collapse-text">Expand</span>
+          </button>
         </div>
       `;
 
-      this.container.innerHTML = scopeBarHtml + collapsedTabsHtml;
+      this.container.innerHTML = collapsedTabsHtml;
       this.attachEventListeners(zone?.id);
       return;
     }
 
-    // Row 2: Ribbon Navigation Tabs
+    // Row 1: Ribbon Navigation Tabs
     const tabsStripHtml = `
       <div class="ribbon-tabs-strip" role="tablist" aria-label="Array Configuration Toolsets">
-        <button class="ribbon-tab-item ${this.activeTab === 'orientation' ? 'active' : ''}" data-tab="orientation" role="tab" aria-selected="${this.activeTab === 'orientation'}">
+        <button class="ribbon-tab-item ${this.activeTab === 'home' ? 'active' : ''}" data-tab="home" role="tab" aria-selected="${this.activeTab === 'home'}" title="Project Home: System Selection, Array Management, Quick CAD Drafting, and Live Telemetry">
+          <span class="tab-icon">🏠</span>
+          <span class="tab-title">Home</span>
+          <span class="tab-subtext-badge">${currentSystem?.name || 'Project'}</span>
+        </button>
+        <button class="ribbon-tab-item ${this.activeTab === 'orientation' ? 'active' : ''}" data-tab="orientation" role="tab" aria-selected="${this.activeTab === 'orientation'}" ${!zone ? 'disabled' : ''}>
           <span class="tab-icon">📐</span>
           <span class="tab-title">Array & Orientation</span>
         </button>
@@ -293,10 +173,17 @@ export class RibbonUI {
           <span class="tab-title">Views & Filters</span>
           <span class="tab-subtext-badge">${this.getActivePresetLabel()}</span>
         </button>
+
+        <button id="ribbon-toggle-collapse" class="ribbon-collapse-toggle ${this.isCollapsed ? 'is-collapsed' : ''}" style="margin-left: auto;" title="${this.isCollapsed ? 'Expand Ribbon Controls' : 'Collapse Ribbon Controls'}" aria-expanded="${!this.isCollapsed}">
+          <svg class="collapse-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </svg>
+          <span class="collapse-text">Collapse</span>
+        </button>
       </div>
     `;
 
-    // Row 3: Ribbon Tool Pod Panel
+    // Row 2: Ribbon Tool Pod Panel
     let contentHtml = '';
     let batchBannerHtml = '';
 
@@ -304,6 +191,19 @@ export class RibbonUI {
       contentHtml = this.renderViewsTab();
     } else if (this.activeTab === 'ac') {
       contentHtml = this.renderAcTab(currentSystem);
+    } else if (this.activeTab === 'home') {
+      contentHtml = this.renderHomeTab(
+        currentSystem,
+        zone,
+        selectedZones,
+        systems,
+        zones,
+        isMultiSelect,
+        drawingMode,
+        totalSelectedKwp,
+        totalSelectedPanels,
+        currentSystemSummary
+      );
     } else if (!zone) {
       contentHtml = `
         <div class="ribbon-empty-deck" role="region" aria-label="CAD Workspace Starter">
@@ -1161,7 +1061,7 @@ export class RibbonUI {
       }
     }
 
-    this.container.innerHTML = scopeBarHtml + tabsStripHtml + batchBannerHtml + contentHtml;
+    this.container.innerHTML = tabsStripHtml + batchBannerHtml + contentHtml;
     this.attachEventListeners(zone?.id);
     this.attachTabKeyNav();
 
@@ -1324,6 +1224,29 @@ export class RibbonUI {
       const newName = prompt('Rename system:', curSys.name);
       if (newName && newName.trim()) {
         this.store.updateSystem(curSys.id, { name: newName.trim() });
+      }
+    });
+
+    document.getElementById('ribbon-btn-delete-system')?.addEventListener('click', () => {
+      const curSys = this.store.getSelectedSystem();
+      if (!curSys) return;
+
+      const associatedZones = this.store.getZones().filter(z => z.systemId === curSys.id);
+      const totalPanels = associatedZones.reduce((sum, z) => sum + z.activePanelCount, 0);
+      const totalKwp = Number(associatedZones.reduce((sum, z) => sum + z.totalKwp, 0).toFixed(2));
+
+      const warningMessage =
+        `⚠️ WARNING: PERMANENT DELETION\n\n` +
+        `Are you sure you want to delete electrical system "${curSys.name}"?\n\n` +
+        `This will permanently delete:\n` +
+        ` • The electrical system (${curSys.inverter.inverterCount}×${curSys.inverter.ratedAcPowerKw} kW Inverter Station)\n` +
+        ` • ${associatedZones.length} associated array zone(s)\n` +
+        ` • ${totalPanels} solar panels (${totalKwp} kWp)\n` +
+        ` • All associated string circuits, homerun raceways, and AC feeders\n\n` +
+        `This action cannot be undone. Do you wish to proceed?`;
+
+      if (confirm(warningMessage)) {
+        this.store.removeSystem(curSys.id, true);
       }
     });
 
@@ -2487,6 +2410,186 @@ export class RibbonUI {
     `;
   }
 
+  private renderHomeTab(
+    currentSystem: SolarSystem | undefined,
+    zone: ArrayZone | null | undefined,
+    selectedZones: ArrayZone[],
+    systems: SolarSystem[],
+    zones: ArrayZone[],
+    isMultiSelect: boolean,
+    drawingMode: string,
+    totalSelectedKwp: number,
+    totalSelectedPanels: number,
+    currentSystemSummary: any
+  ): string {
+    const drawingMountType = this.store.drawingMountType;
+    const sysColor = currentSystem?.color || '#0284c7';
+    const dcKwp = isMultiSelect ? totalSelectedKwp : (zone ? zone.totalKwp : (currentSystemSummary?.totalKwp || 0));
+    const panels = isMultiSelect ? totalSelectedPanels : (zone ? zone.activePanelCount : (currentSystemSummary?.totalActivePanels || 0));
+
+    return `
+      <div class="ribbon-panel" role="tabpanel" aria-label="Project Home, System & Array Selectors, CAD Quick Tools">
+        <!-- Pod 1: System Selection & Management -->
+        <div class="cad-pod">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">⚡ ELECTRICAL SYSTEM</span>
+            <span class="cad-pod-tag accent" style="background: ${sysColor}20; color: ${sysColor}; border-color: ${sysColor}50;">
+              ${currentSystem ? currentSystem.name.toUpperCase() : 'NO SYSTEM'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row">
+              <select id="ribbon-system-select" class="cad-select-sm" title="Switch active electrical solar system" aria-label="Select Electrical System">
+                ${systems
+                  .map(
+                    s => `
+                  <option value="${s.id}" ${currentSystem?.id === s.id ? 'selected' : ''}>
+                    ${s.name} (${s.zoneIds.length} ${s.zoneIds.length === 1 ? 'array' : 'arrays'} • ${s.inverter.inverterCount * s.inverter.ratedAcPowerKw}kW AC)
+                  </option>
+                `
+                  )
+                  .join('')}
+              </select>
+            </div>
+            <div class="cad-control-row compact-gap" style="margin-top: 4px;">
+              <button id="ribbon-btn-new-system" class="btn btn-xs btn-primary flex-1" title="Create a new independent electrical solar system / inverter station">
+                + New System
+              </button>
+              <button id="ribbon-btn-edit-system" class="btn btn-xs btn-outline flex-1" title="Rename active system">
+                ✏️ Rename
+              </button>
+              <button id="ribbon-btn-delete-system" class="btn btn-xs btn-outline danger" title="Delete active electrical system and all associated arrays, raceways, and inverters">
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${currentSystem ? `${currentSystem.inverter.inverterCount}×${currentSystem.inverter.ratedAcPowerKw}kW Inverter(s) • ${currentSystem.systemVoltageV || 400}V Grid Tap` : 'Add or select an electrical system'}</span>
+          </div>
+        </div>
+
+        <!-- Pod 2: Array Zone Selection & Actions -->
+        <div class="cad-pod">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">📐 ARRAY ZONE SELECTION</span>
+            <span class="cad-pod-tag ${isMultiSelect ? 'highlight' : zone ? 'accent' : ''}">
+              ${isMultiSelect ? `${selectedZones.length} ARRAYS BATCH` : zone ? zone.config.mountType.toUpperCase() : 'NO SELECTION'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-field-row">
+              ${
+                zones.length > 0
+                  ? `
+                <select id="ribbon-zone-select" class="cad-select-sm" aria-label="Select Array Zone">
+                  ${isMultiSelect ? `<option value="__batch__" selected>✨ All ${selectedZones.length} Selected Arrays</option>` : ''}
+                  ${zones
+                    .map(
+                      z => `
+                    <option value="${z.id}" ${!isMultiSelect && zone?.id === z.id ? 'selected' : ''}>
+                      ${this.store.isZoneSelected(z.id) ? '✓ ' : ''}${z.name} [${this.store.getSystem(z.systemId)?.name?.split(':')[0] || 'Sys'}] (${z.activePanelCount}p • ${z.totalKwp}kWp)
+                    </option>
+                  `
+                    )
+                    .join('')}
+                </select>
+              `
+                  : `<select class="cad-select-sm" disabled><option>No Arrays Plotted</option></select>`
+              }
+            </div>
+            <div class="cad-control-row compact-gap" style="margin-top: 4px;">
+              ${
+                zones.length > 1
+                  ? `<button id="ribbon-btn-select-all" class="btn btn-xs btn-outline flex-1" title="Select all arrays for batch editing">${isMultiSelect && selectedZones.length === zones.length ? 'Clear Selection' : `Select All (${zones.length})`}</button>`
+                  : ''
+              }
+              <button id="ribbon-btn-zoom-array" class="btn btn-xs btn-outline flex-1" title="${isMultiSelect ? 'Zoom to fit all selected arrays' : 'Zoom map to fit this array'}">
+                🎯 Fit View
+              </button>
+              <button id="ribbon-delete-zone" class="btn btn-xs btn-outline danger icon-only" title="${isMultiSelect ? 'Delete all selected arrays' : 'Delete current array'}">
+                🗑️
+              </button>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${isMultiSelect ? `Batch editing active: controls adjust all ${selectedZones.length} arrays` : zone ? `${zone.name} (${zone.activePanelCount} panels • ${zone.totalKwp} kWp)` : 'Select an array from map or dropdown'}</span>
+          </div>
+        </div>
+
+        <!-- Pod 3: CAD Quick Drafting Tools -->
+        <div class="cad-pod wide">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">✏️ CAD QUICK DRAFTING</span>
+            <span class="cad-pod-tag ${drawingMode !== 'none' ? 'highlight' : ''}">
+              ${drawingMode !== 'none' ? `DRAFTING: ${drawingMode.toUpperCase()}` : 'TOOLS'}
+            </span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-control-row compact-gap">
+              <button id="ribbon-btn-new-roof" class="btn btn-xs ${drawingMode === 'zone' && drawingMountType === 'roof' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Draw new rooftop array polygon">
+                🏠 + Roof Array
+              </button>
+              <button id="ribbon-btn-new-ground" class="btn btn-xs ${drawingMode === 'zone' && drawingMountType === 'ground' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Draw new ground mount array polygon">
+                🌱 + Ground Mount
+              </button>
+              <button id="ribbon-btn-new-ko" class="btn btn-xs ${drawingMode === 'keepout' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Draw obstacle / keep-out exclusion zone">
+                🚫 + Keep-Out
+              </button>
+            </div>
+            <div class="cad-control-row compact-gap" style="margin-top: 4px;">
+              <button id="ribbon-btn-new-raceway" class="btn btn-xs ${drawingMode === 'raceway' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Draw shared homerun raceway trunk">
+                🛤️ + Homerun
+              </button>
+              <button id="ribbon-btn-new-inverter" class="btn btn-xs ${drawingMode === 'inverter' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Place inverter powerhouse station on map">
+                ⚡ + Inverter
+              </button>
+              <button id="ribbon-btn-new-pcc" class="btn btn-xs ${drawingMode === 'ac_interconnection' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Pin AC Interconnection Point (PCC) on satellite map">
+                🏢 + PCC
+              </button>
+              <button id="ribbon-btn-new-ac-feeder" class="btn btn-xs ${drawingMode === 'ac_raceway' ? 'btn-primary active-pulse' : 'btn-outline'}" style="flex: 1;" title="Draw AC Feeder Conduit from Inverter Station to PCC">
+                ⚡ + AC Feeder
+              </button>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${drawingMode !== 'none' ? 'Drafting active: click points on satellite view, double-click to finish' : 'Click any drafting tool to begin plotting on satellite map'}</span>
+          </div>
+        </div>
+
+        <!-- Pod 4: Project Live Telemetry HUD -->
+        <div class="cad-pod wide">
+          <div class="cad-pod-header">
+            <span class="cad-pod-title">📊 LIVE SYSTEM TELEMETRY</span>
+            <span class="cad-val-chip highlight">${dcKwp} kWp TOTAL</span>
+          </div>
+          <div class="cad-pod-body">
+            <div class="cad-telemetry-hud-grid">
+              <div class="hud-item highlight" title="Total DC peak capacity for active selection">
+                <span class="hud-label">DC Capacity</span>
+                <span class="hud-val">${dcKwp} <small>kWp</small></span>
+              </div>
+              <div class="hud-item" title="Total active fitted solar panels">
+                <span class="hud-label">Panel Count</span>
+                <span class="hud-val">${panels} <small>Panels</small></span>
+              </div>
+              <div class="hud-item" title="Combined rated AC output of inverters">
+                <span class="hud-label">Inverter AC</span>
+                <span class="hud-val">${currentSystemSummary?.inverterAcKw || 0} <small>kW</small></span>
+              </div>
+              <div class="hud-item" title="DC to AC overload sizing ratio">
+                <span class="hud-label">DC/AC Ratio</span>
+                <span class="hud-val">${currentSystemSummary?.dcAcRatio || '1.0'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="cad-pod-footer">
+            <span class="cad-hint-text">${currentSystemSummary?.totalStrings || 0} Series Strings Formed &bull; ${currentSystem?.systemVoltageV || 400}V Grid Interconnection</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   private renderAcTab(currentSystem?: SolarSystem | null): string {
     const activeSystem = currentSystem || this.store.getSelectedSystem() || this.store.getSystems()[0];
     const activeSystemId = activeSystem?.id || '';
@@ -2522,137 +2625,128 @@ export class RibbonUI {
     return `
       <div class="ribbon-panel" role="tabpanel" aria-label="AC Interconnection, Grid Voltage, Transformers and MDP">
         <!-- Pod 1: System Tapping Voltage & Transformer Design (PEC 4.50) -->
-        <div class="cad-pod wide">
+        <div class="cad-pod">
           <div class="cad-pod-header">
-            <span class="cad-pod-title">⚡ GRID TAPPING VOLTAGE & TRANSFORMER</span>
+            <span class="cad-pod-title">⚡ GRID TAP & XFM</span>
             <span class="cad-pod-tag ${xfmDesign.required ? 'warning' : 'accent'}">
-              ${xfmDesign.required ? `XFM: ${xfmDesign.kvaRating} kVA` : 'DIRECT TAP'}
+              ${xfmDesign.required ? `${xfmDesign.kvaRating}kVA XFM` : 'DIRECT TAP'}
             </span>
           </div>
           <div class="cad-pod-body">
-            <div class="cad-field-row" style="display: flex; gap: 6px;">
-              <div class="cad-input-unit-wrap sm" style="flex: 1.2;" title="Grid Interconnection / Tapping Point Nominal Voltage">
-                <span class="cad-unit-prefix">Tap VAC</span>
+            <div class="cad-field-row" style="display: flex; gap: 4px; align-items: center;">
+              <div class="cad-input-unit-wrap sm" style="flex: 1.1;" title="Grid Interconnection / Tapping Point Nominal Voltage">
+                <span class="cad-unit-prefix">Tap</span>
                 <select id="ribbon-ac-tap-voltage" class="cad-select-sm" aria-label="System Tapping Voltage">
                   ${standardVoltages.map(v => `
-                    <option value="${v}" ${systemVoltageV === v ? 'selected' : ''}>${v} V (${is3Ph ? '3Φ' : '1Φ'})</option>
+                    <option value="${v}" ${systemVoltageV === v ? 'selected' : ''}>${v}V (${is3Ph ? '3Φ' : '1Φ'})</option>
                   `).join('')}
                   <option value="custom" ${isCustomTapVoltage ? 'selected' : ''}>Custom (${systemVoltageV}V)</option>
                 </select>
               </div>
-              <div class="cad-telemetry-chip" style="flex: 1;" title="Inverter Output AC Voltage configured in Inverter Station">
-                <span class="chip-label">Inverter:</span>
-                <span class="chip-val"><strong>${invVoltageV}V</strong> (${is3Ph ? '3Φ' : '1Φ'})</span>
+              <div class="cad-val-chip" style="font-size: 10px; padding: 2px 5px;" title="Inverter Output AC Voltage configured in Inverter Station">
+                Inv: ${invVoltageV}V
               </div>
             </div>
 
             <!-- Transformer Design Status HUD -->
-            <div style="margin-top: 5px;">
+            <div style="margin-top: 3px;">
               ${xfmDesign.required ? `
-                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 5px 8px; font-size: 11px;">
-                  <div style="display: flex; justify-content: space-between; font-weight: 600; color: #f59e0b; margin-bottom: 2px;">
-                    <span>⚡ ${xfmDesign.type === 'step_up' ? 'Step-Up' : 'Step-Down'} Transformer Required (PEC 4.50)</span>
-                    <span>${xfmDesign.kvaRating} kVA • ${xfmDesign.vectorGroup || 'Dyn11'}</span>
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 3px 6px; font-size: 10px;">
+                  <div style="display: flex; justify-content: space-between; font-weight: 700; color: #f59e0b;">
+                    <span>⚡ ${xfmDesign.type === 'step_up' ? 'Step-Up' : 'Step-Down'} (${xfmDesign.kvaRating} kVA)</span>
+                    <span style="font-size: 9px; opacity: 0.85;">${xfmDesign.vectorGroup || 'Dyn11'}</span>
                   </div>
-                  <div style="display: flex; justify-content: space-between; color: var(--text-muted, #94a3b8); font-size: 10px;">
-                    <span>Pri: ${xfmDesign.primaryVoltageV}V (${xfmDesign.primaryFullLoadCurrentA.toFixed(1)}A FLA, ${xfmDesign.primaryPecSizing.ocpdRatingA}A OCPD)</span>
-                    <span>Sec: ${xfmDesign.secondaryVoltageV}V (${xfmDesign.secondaryFullLoadCurrentA.toFixed(1)}A FLA, ${xfmDesign.secondaryPecSizing.ocpdRatingA}A OCPD)</span>
+                  <div style="display: flex; justify-content: space-between; color: var(--text-muted, #94a3b8); font-size: 9px; margin-top: 1px;">
+                    <span>Pri: ${xfmDesign.primaryVoltageV}V (${xfmDesign.primaryFullLoadCurrentA.toFixed(0)}A)</span>
+                    <span>Sec: ${xfmDesign.secondaryVoltageV}V (${xfmDesign.secondaryFullLoadCurrentA.toFixed(0)}A)</span>
                   </div>
                 </div>
               ` : `
-                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 5px 8px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: #10b981;">
-                  <span>✓</span>
-                  <span><strong>Matched Voltage (${invVoltageV}V)</strong> — Direct interconnection without power transformer</span>
+                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 4px 6px; font-size: 10px; display: flex; align-items: center; justify-content: center; gap: 4px; color: #10b981;">
+                  <span>✓ Direct Interconnection (${invVoltageV}V)</span>
                 </div>
               `}
             </div>
           </div>
           <div class="cad-pod-footer">
-            <span class="cad-hint-text">Inverter AC voltage (${invVoltageV}V) is configured in the Stringing & Inverters tab.</span>
+            <span class="cad-hint-text">PEC 4.50 Transformer Sizing</span>
           </div>
         </div>
 
         <!-- Pod 2: AC Combiner Box & Collector Breaker -->
         <div class="cad-pod">
           <div class="cad-pod-header">
-            <span class="cad-pod-title">📦 AC COMBINER BOX</span>
-            <span class="cad-pod-tag ${hasAcCombiner ? 'accent' : ''}">${hasAcCombiner ? 'COLLECTED' : 'DIRECT'}</span>
+            <span class="cad-pod-title">📦 AC COMBINER</span>
+            <span class="cad-pod-tag ${hasAcCombiner ? 'accent' : ''}">${hasAcCombiner ? 'ENABLED' : 'BYPASS'}</span>
           </div>
           <div class="cad-pod-body">
             <div class="cad-field-row">
-              <label style="font-size: 11px; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-main); font-weight: 500;" title="Consolidate multiple inverter branch circuits into an AC Combiner with a main collector breaker">
+              <label style="font-size: 11px; display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-main); font-weight: 500;" title="Consolidate multiple inverter branch circuits into an AC Combiner with a main collector breaker">
                 <input type="checkbox" id="ribbon-ac-chk-combiner" ${hasAcCombiner ? 'checked' : ''} />
-                <span>Enable AC Combiner Box</span>
+                <span>Enable Combiner</span>
               </label>
             </div>
-            <div class="cad-field-row" style="margin-top: 4px;">
+            <div class="cad-field-row" style="margin-top: 3px;">
               <div class="cad-telemetry-chip ${hasAcCombiner ? 'highlight' : ''}" style="width: 100%;">
-                <span class="chip-label">Collector Breaker:</span>
-                <span class="chip-val"><strong>${hasAcCombiner ? `${collectorBreakerA}A OCPD` : 'Bypassed'}</strong> ${hasAcCombiner ? `(${invCount} Inv × ${invAmps.toFixed(1)}A × 125%)` : ''}</span>
+                <span class="chip-label">Collector OCPD:</span>
+                <span class="chip-val"><strong>${hasAcCombiner ? `${collectorBreakerA}A` : 'Bypassed'}</strong></span>
               </div>
             </div>
           </div>
           <div class="cad-pod-footer">
-            <span class="cad-hint-text">${hasAcCombiner ? `Combines ${invCount} inverter outputs before transformer / MDP main bus` : 'Each inverter feeds separately to MDP or transformer'}</span>
+            <span class="cad-hint-text">${hasAcCombiner ? `${invCount} Inverters &bull; PEC 6.90.8` : 'Direct Inverter Feeds'}</span>
           </div>
         </div>
 
         <!-- Pod 3: Main Distribution Panel (MDP) & Interconnection Tap -->
-        <div class="cad-pod wide">
+        <div class="cad-pod">
           <div class="cad-pod-header">
-            <span class="cad-pod-title">🏢 MAIN DISTRIBUTION PANEL (MDP)</span>
+            <span class="cad-pod-title">🏢 MAIN PANEL (MDP)</span>
             <span class="cad-pod-tag ${mdpTapType === 'line_side' ? 'accent' : 'highlight'}">
-              ${mdpTapType === 'line_side' ? 'LINE-SIDE TAP' : 'LOAD-SIDE TAP'}
+              ${mdpTapType === 'line_side' ? 'LINE-SIDE' : 'LOAD-SIDE'}
             </span>
           </div>
           <div class="cad-pod-body">
-            <div class="cad-control-row compact-gap">
-              <div class="cad-input-unit-wrap sm" style="flex: 1.2;" title="MDP Interconnection Tap Point Architecture (PEC 705.12)">
-                <span class="cad-unit-prefix">Tap Type</span>
+            <div class="cad-field-row" style="display: flex; gap: 4px;">
+              <div class="cad-input-unit-wrap sm" style="flex: 1.1;" title="MDP Interconnection Tap Point Architecture (PEC 705.12)">
+                <span class="cad-unit-prefix">Tap</span>
                 <select id="ribbon-ac-mdp-tap" class="cad-select-sm" aria-label="MDP Interconnection Tap Architecture">
-                  <option value="load_side" ${mdpTapType === 'load_side' ? 'selected' : ''}>Load-Side (120% Rule)</option>
-                  <option value="line_side" ${mdpTapType === 'line_side' ? 'selected' : ''}>Line-Side (Supply Side)</option>
+                  <option value="load_side" ${mdpTapType === 'load_side' ? 'selected' : ''}>Load-Side (120%)</option>
+                  <option value="line_side" ${mdpTapType === 'line_side' ? 'selected' : ''}>Line-Side (Supply)</option>
                 </select>
               </div>
-              <div class="cad-input-unit-wrap sm" style="flex: 1;" title="MDP Main Circuit Breaker Rating in Amperes">
-                <span class="cad-unit-prefix">Main OCPD</span>
+              <div class="cad-input-unit-wrap sm" style="flex: 0.9;" title="MDP Main Circuit Breaker Rating in Amperes">
+                <span class="cad-unit-prefix">Main</span>
                 <select id="ribbon-ac-mdp-main-breaker" class="cad-select-sm" aria-label="MDP Main Circuit Breaker Rating">
                   ${standardBreakers.map(b => `
-                    <option value="${b}" ${currentMdpBreaker === b ? 'selected' : ''}>${b} A Main</option>
+                    <option value="${b}" ${currentMdpBreaker === b ? 'selected' : ''}>${b} A</option>
                   `).join('')}
                 </select>
               </div>
             </div>
 
             <!-- Interconnection Architecture Callout -->
-            <div style="margin-top: 5px; font-size: 10.5px; padding: 4px 8px; border-radius: 4px; background: ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)'}; border: 1px solid ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(16, 185, 129, 0.25)'};">
-              <div style="font-weight: 600; color: ${mdpTapType === 'load_side' ? '#3b82f6' : '#10b981'}; margin-bottom: 2px;">
-                ${mdpTapType === 'load_side' ? '🔌 Load-Side Tap: Subject to PEC 705.12 (120% Busbar Rule)' : '⚡ Line-Side Tap: Connected ahead of MDP Main Breaker (PEC 705.11)'}
-              </div>
-              <div style="color: var(--text-muted, #94a3b8); font-size: 10px;">
-                ${mdpTapType === 'load_side'
-                  ? '🏢 Facility Loads connected downstream on Load Side of MDP Main Breaker. Solar backfeeds opposite end of busbar.'
-                  : '🏢 Facility Loads fed normally via MDP Main Breaker. Solar taps utility supply side without busbar ampacity limitation.'}
-              </div>
+            <div style="margin-top: 3px; font-size: 9.5px; padding: 3px 6px; border-radius: 4px; background: ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)'}; border: 1px solid ${mdpTapType === 'load_side' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(16, 185, 129, 0.25)'}; color: ${mdpTapType === 'load_side' ? '#60a5fa' : '#34d399'};">
+              ${mdpTapType === 'load_side' ? '🔌 Loads on Load Side • 120% Bus Rule' : '⚡ Loads on Load Side • Supply Side Tap'}
             </div>
           </div>
           <div class="cad-pod-footer">
-            <span class="cad-hint-text">SLD schematics dynamically reflect Line vs Load side tapping and facility load branch.</span>
+            <span class="cad-hint-text">PEC 705 Interconnection</span>
           </div>
         </div>
 
         <!-- Pod 4: Point of Common Coupling (PCC) Interconnection Location -->
         <div class="cad-pod">
           <div class="cad-pod-header">
-            <span class="cad-pod-title">📍 PCC INTERCONNECTION POINT</span>
+            <span class="cad-pod-title">📍 PCC GRID POINT</span>
             <span class="cad-pod-tag ${activeSystem?.acInterconnectionLocation ? 'accent' : 'warning'}">
               ${activeSystem?.acInterconnectionLocation ? 'PINNED' : 'NOT SET'}
             </span>
           </div>
           <div class="cad-pod-body">
-            <div class="cad-field-row" style="display: flex; gap: 6px;">
+            <div class="cad-field-row" style="display: flex; gap: 4px;">
               <button id="ribbon-btn-place-pcc" class="btn btn-xs ${isDrawingPcc ? 'btn-primary active-pulse' : 'btn-outline accent'}" style="flex: 1;" title="Click to pin AC Point of Common Coupling (PCC) on satellite map">
-                ${isDrawingPcc ? '🎯 Click Map to Pin...' : '📍 Pin PCC'}
+                ${isDrawingPcc ? '🎯 Click Map...' : '📍 Pin PCC'}
               </button>
               ${activeSystem?.acInterconnectionLocation ? `
                 <button id="ribbon-btn-fly-pcc" class="btn btn-xs btn-outline" title="Zoom map to PCC point">🎯</button>
@@ -2660,7 +2754,7 @@ export class RibbonUI {
               ` : ''}
             </div>
             <div class="cad-field-row" style="margin-top: 4px;">
-              <div class="cad-input-unit-wrap full" title="Ground elevation of AC PCC in meters">
+              <div class="cad-input-unit-wrap sm" style="width: 100%;" title="Ground elevation of AC PCC in meters">
                 <span class="cad-unit-prefix">PCC Elev</span>
                 <input type="number" id="ribbon-pcc-elevation" class="cad-num-input" value="${activeSystem?.acInterconnectionElevationM ?? 0}" step="0.5" aria-label="AC PCC Elevation in Meters" />
                 <span class="cad-unit-addon">m</span>
@@ -2668,49 +2762,44 @@ export class RibbonUI {
             </div>
           </div>
           <div class="cad-pod-footer">
-            <span class="cad-hint-text">${activeSystem?.acInterconnectionLocation ? `${activeSystem.acInterconnectionLocation.lat.toFixed(5)}, ${activeSystem.acInterconnectionLocation.lng.toFixed(5)}` : 'Click Pin PCC to place grid connection on map'}</span>
+            <span class="cad-hint-text">${activeSystem?.acInterconnectionLocation ? 'Location pinned on map' : 'Click to pin PCC on map'}</span>
           </div>
         </div>
 
         <!-- Pod 5: AC Feeder Raceway & Sizing Telemetry (PEC 2.15) -->
-        <div class="cad-pod wide">
+        <div class="cad-pod">
           <div class="cad-pod-header">
-            <span class="cad-pod-title">⚡ AC FEEDER RACEWAY & SIZING (PEC)</span>
-            <span class="cad-pod-tag ${acFeederSummary.isCompliant ? 'accent' : 'warning'}">
-              ${acFeederSummary.totalRunM > 0 ? `${acFeederSummary.voltageDropPercent}% DROP` : 'NO FEEDER'}
+            <span class="cad-pod-title">⚡ AC FEEDER RACEWAY</span>
+            <span class="cad-pod-tag ${acFeederSummary.totalRunM > 0 ? (acFeederSummary.isCompliant ? 'accent' : 'warning') : ''}">
+              ${acFeederSummary.totalRunM > 0 ? (acFeederSummary.isCompliant ? 'PEC OK' : 'OVER 3%') : 'NO RUN'}
             </span>
           </div>
           <div class="cad-pod-body">
-            <div class="cad-field-row" style="display: flex; gap: 6px;">
+            <div class="cad-field-row" style="display: flex; gap: 4px;">
               <button id="ribbon-btn-draw-ac-feeder" class="btn btn-xs ${isDrawingAcFeeder ? 'btn-primary active-pulse' : 'btn-outline warning'}" style="flex: 1;" title="Draw AC Feeder Raceway polyline from Inverter/Combiner to PCC">
-                ${isDrawingAcFeeder ? '✏️ Finish Drawing' : '⚡ Draw AC Feeder'}
+                ${isDrawingAcFeeder ? '✏️ Finish Feeder' : '⚡ Draw Feeder'}
               </button>
               ${activeSystem?.acRaceway ? `
                 <button id="ribbon-btn-fly-ac-feeder" class="btn btn-xs btn-outline" title="Zoom to AC Feeder">🎯</button>
                 <button id="ribbon-btn-clear-ac-feeder" class="btn-icon xs danger" title="Clear AC Feeder">✕</button>
               ` : ''}
             </div>
-            <div class="cad-telemetry-hud-grid" style="margin-top: 5px;">
+            <div class="cad-telemetry-hud-grid" style="grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">
               <div class="hud-item highlight" title="Total AC feeder route distance including riser elevation changes">
-                <span class="hud-label">Feeder Run</span>
+                <span class="hud-label">Run Length</span>
                 <span class="hud-val">${acFeederSummary.totalRunM} <small>m</small></span>
               </div>
               <div class="hud-item ${acFeederSummary.isCompliant ? '' : 'danger'}" title="AC Feeder Voltage Drop percentage (PEC limit: 3.0%)">
-                <span class="hud-label">Voltage Drop</span>
+                <span class="hud-label">V-Drop</span>
                 <span class="hud-val">${acFeederSummary.voltageDropPercent}% <small>(${acFeederSummary.voltageDropV}V)</small></span>
               </div>
-              <div class="hud-item" title="Recommended PEC phase conductor size">
-                <span class="hud-label">Conductor</span>
-                <span class="hud-val" style="font-size: 11px;">${acFeederSummary.conductorCallout || 'THHN Cu'}</span>
-              </div>
-              <div class="hud-item" title="Conduit diameter per PEC Chapter 9">
-                <span class="hud-label">Conduit</span>
-                <span class="hud-val" style="font-size: 11px;">${acFeederSummary.conduitCallout || 'PVC/RMC'}</span>
-              </div>
+            </div>
+            <div style="font-size: 9px; margin-top: 2px; color: var(--text-muted, #94a3b8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${acFeederSummary.conductorCallout || 'THHN Cu in Conduit'}">
+              📐 <strong style="color: var(--text-main);">${acFeederSummary.conductorCallout || 'THHN Cu in Conduit'}</strong>
             </div>
           </div>
           <div class="cad-pod-footer">
-            <span class="cad-hint-text">${acFeederSummary.totalRunM > 0 ? (acFeederSummary.isCompliant ? '✓ Compliant with PEC 2.15 feeder voltage drop limit (≤ 3.0%)' : '⚠️ Voltage drop exceeds PEC 2.15 limit of 3.0% — increase conductor size') : 'Draw AC raceway polyline from inverter to PCC to compute drop'}</span>
+            <span class="cad-hint-text">${acFeederSummary.totalRunM > 0 ? (acFeederSummary.isCompliant ? '✓ Within 3.0% Limit (PEC 2.15)' : '⚠️ Exceeds 3.0% V-Drop') : 'Draw feeder route on map'}</span>
           </div>
         </div>
       </div>

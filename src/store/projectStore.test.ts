@@ -745,6 +745,79 @@ describe('ProjectStore & Multi-System Linking', () => {
     expect(panelsZone2.every(p => p.stringId !== null)).toBe(true);
   });
 
+  it('correctly isolates PV module selection from array selection and supports array multi-selection toggles', () => {
+    const origin = { lat: 14.5995, lng: 120.9842 };
+    const sys = store.getSystems()[0];
+    const v1 = [
+      origin,
+      localMetricToLatLng({ x: 25, y: 0 }, origin),
+      localMetricToLatLng({ x: 25, y: 20 }, origin),
+      localMetricToLatLng({ x: 0, y: 20 }, origin)
+    ];
+    const v2 = [
+      localMetricToLatLng({ x: 40, y: 0 }, origin),
+      localMetricToLatLng({ x: 65, y: 0 }, origin),
+      localMetricToLatLng({ x: 65, y: 20 }, origin),
+      localMetricToLatLng({ x: 40, y: 20 }, origin)
+    ];
+
+    const z1 = store.addZone(v1, 'roof', 'Array 1', sys.id);
+    const z2 = store.addZone(v2, 'roof', 'Array 2', sys.id);
+
+    // 1. Initial selection has z2 selected from addZone
+    expect(store.isZoneSelected(z2.id)).toBe(true);
+    expect(store.getSelectedZone()?.id).toBe(z2.id);
+
+    // 2. Multi-select both zones
+    store.selectZone(z1.id, true);
+    expect(store.getSelectedZones().length).toBe(2);
+    expect(store.isZoneSelected(z1.id)).toBe(true);
+    expect(store.isZoneSelected(z2.id)).toBe(true);
+
+    // 3. Toggle z2 off in multi-select -> z1 remains selected
+    store.selectZone(z2.id, true);
+    expect(store.getSelectedZones().length).toBe(1);
+    expect(store.isZoneSelected(z1.id)).toBe(true);
+    expect(store.isZoneSelected(z2.id)).toBe(false);
+
+    // 4. Toggle z1 off in multi-select -> 0 zones selected
+    store.selectZone(z1.id, true);
+    expect(store.getSelectedZones().length).toBe(0);
+    expect(store.isZoneSelected(z1.id)).toBe(false);
+
+    // 5. Selecting a PV module must select the module and NOT the array
+    const z1Panels = store.getPanelsForZone(z1.id);
+    expect(z1Panels.length).toBeGreaterThan(0);
+    const targetPanel = z1Panels[0];
+
+    store.selectPanel(targetPanel.id);
+    expect(store.selectedPanelId).toBe(targetPanel.id);
+    expect(store.getSelectedPanel()?.id).toBe(targetPanel.id);
+    // CRITICAL: The array itself should NOT be selected as an array
+    expect(store.getSelectedZone()).toBeUndefined();
+    expect(store.isZoneSelected(z1.id)).toBe(false);
+    expect(store.getSelectedZones().length).toBe(0);
+
+    // 6. Selecting an array clears the selected panel
+    store.selectZone(z1.id, false);
+    expect(store.selectedPanelId).toBeNull();
+    expect(store.getSelectedPanel()).toBeUndefined();
+    expect(store.getSelectedZone()?.id).toBe(z1.id);
+    expect(store.isZoneSelected(z1.id)).toBe(true);
+
+    // 7. Selecting a panel again clears the zone selection
+    store.selectPanel(targetPanel.id);
+    expect(store.selectedPanelId).toBe(targetPanel.id);
+    expect(store.getSelectedZone()).toBeUndefined();
+    expect(store.isZoneSelected(z1.id)).toBe(false);
+
+    // 8. Deselecting panel leaves no selection
+    store.selectPanel(null);
+    expect(store.selectedPanelId).toBeNull();
+    expect(store.getSelectedPanel()).toBeUndefined();
+    expect(store.getSelectedZone()).toBeUndefined();
+  });
+
   it('manages shared system homerun raceway independent of arrays', () => {
     const sysId = store.selectedSystemId!;
     expect(sysId).toBeTruthy();
@@ -1226,6 +1299,58 @@ describe('ProjectStore & Multi-System Linking', () => {
           expect(distSq).toBeLessThan(0.00005 * 0.00005); // ~5m
         }
       }
+    });
+
+    it('deletes electrical system and all its associated array zones and panels when removeSystem is called with deleteContents', () => {
+      // Create two systems
+      const sys1 = store.getSystems()[0];
+      const sys2 = store.addSystem('Secondary System');
+
+      // Add a zone to sys1 and a zone to sys2
+      const z1 = store.addZone([
+        origin,
+        localMetricToLatLng({ x: 20, y: 0 }, origin),
+        localMetricToLatLng({ x: 20, y: 10 }, origin),
+        localMetricToLatLng({ x: 0, y: 10 }, origin)
+      ], 'roof', 'Zone Sys 1', sys1.id);
+
+      const z2 = store.addZone([
+        localMetricToLatLng({ x: 30, y: 0 }, origin),
+        localMetricToLatLng({ x: 50, y: 0 }, origin),
+        localMetricToLatLng({ x: 50, y: 10 }, origin),
+        localMetricToLatLng({ x: 30, y: 10 }, origin)
+      ], 'roof', 'Zone Sys 2', sys2.id);
+
+      expect(store.getPanelsForSystem(sys1.id).length).toBeGreaterThan(0);
+      expect(store.getPanelsForSystem(sys2.id).length).toBeGreaterThan(0);
+      expect(store.getZone(z1.id)).toBeDefined();
+      expect(store.getZone(z2.id)).toBeDefined();
+
+      // Delete sys1 with contents
+      store.removeSystem(sys1.id, true);
+
+      // sys1 and z1 should be deleted, panels for z1 removed
+      expect(store.getSystem(sys1.id)).toBeUndefined();
+      expect(store.getZone(z1.id)).toBeUndefined();
+      expect(store.getPanelsForSystem(sys1.id).length).toBe(0);
+
+      // sys2 and z2 must remain completely intact
+      expect(store.getSystem(sys2.id)).toBeDefined();
+      expect(store.getZone(z2.id)).toBeDefined();
+      expect(store.getPanelsForSystem(sys2.id).length).toBeGreaterThan(0);
+      expect(store.selectedSystemId).toBe(sys2.id);
+    });
+
+    it('resets to a fresh default system when the last remaining system is deleted', () => {
+      const allSystems = store.getSystems();
+      for (const s of allSystems) {
+        store.removeSystem(s.id, true);
+      }
+
+      // Should automatically have a clean default system
+      expect(store.getSystems().length).toBe(1);
+      expect(store.selectedSystemId).toBeDefined();
+      expect(store.getZones().length).toBe(0);
     });
   });
 });

@@ -3,6 +3,8 @@ import {
   sizePecAcFeeder,
   sizePecEgc,
   sizePecDcStringWire,
+  sizePecTransformer,
+  getRecommendedMdpMainBreaker,
   PEC_COPPER_THHN_75C,
   PEC_EGC_TABLE
 } from './pecWireSizing';
@@ -85,5 +87,54 @@ describe('Philippine Electrical Code (PEC) Wire Sizing', () => {
     const parallelStr = sizePecDcStringWire(15.8, true);
     expect(parallelStr.cableMm2).toBe(6.0);
     expect(parallelStr.fullCallout).toContain('2× 6.0mm² PV1-F (1500V DC)');
+  });
+
+  it('sizes power transformers per PEC 4.50 when inverter voltage does not match system voltage', () => {
+    // 1. Matching voltages: No transformer needed
+    const matching = sizePecTransformer(100, 'three_phase', 400, 400);
+    expect(matching.required).toBe(false);
+    expect(matching.transformerKva).toBe(0);
+
+    // 2. 100 kW 3-Phase 400V Inverter stepping down to 230V 3-Phase Grid Tap:
+    // Min kVA = 100 * 1.25 = 125 kVA -> Standard rating = 125 kVA
+    const stepDown = sizePecTransformer(100, 'three_phase', 400, 230);
+    expect(stepDown.required).toBe(true);
+    expect(stepDown.type).toBe('step_down');
+    expect(stepDown.primaryVoltageV).toBe(400);
+    expect(stepDown.secondaryVoltageV).toBe(230);
+    expect(stepDown.transformerKva).toBe(125);
+    expect(stepDown.vectorGroup).toContain('Dyn11');
+    expect(stepDown.primaryFullLoadCurrentA).toBeGreaterThan(0);
+    expect(stepDown.secondaryFullLoadCurrentA).toBeGreaterThan(0);
+    expect(stepDown.primaryOcpdRatingA).toBeGreaterThan(0);
+    expect(stepDown.secondaryOcpdRatingA).toBeGreaterThan(0);
+    expect(stepDown.primaryPecSizing.phaseConductorMm2).toBeGreaterThan(0);
+    expect(stepDown.secondaryPecSizing.phaseConductorMm2).toBeGreaterThan(0);
+
+    // 3. 50 kW 3-Phase 400V Inverter stepping up to 480V 3-Phase Grid Tap:
+    // Min kVA = 50 * 1.15 = 57.5 kVA -> Standard rating = 75 kVA
+    const stepUp = sizePecTransformer(50, 'three_phase', 400, 480);
+    expect(stepUp.required).toBe(true);
+    expect(stepUp.type).toBe('step_up');
+    expect(stepUp.primaryVoltageV).toBe(400);
+    expect(stepUp.secondaryVoltageV).toBe(480);
+    expect(stepUp.transformerKva).toBe(75);
+
+    // 4. Single-phase 10 kW 230V Inverter stepping to 240V:
+    // Min kVA = 10 * 1.15 = 11.5 kVA -> Standard rating = 15 kVA
+    const singlePh = sizePecTransformer(10, 'single_phase', 230, 240);
+    expect(singlePh.required).toBe(true);
+    expect(singlePh.transformerKva).toBe(15);
+    expect(singlePh.vectorGroup).toBe('1Φ Isolation');
+  });
+
+  it('computes recommended MDP Main Breaker sizing for facility service entrance', () => {
+    // 100A Solar Breaker -> Recommended Main Breaker at least ~250A
+    const mdpMain250 = getRecommendedMdpMainBreaker(100);
+    expect(mdpMain250).toBeGreaterThanOrEqual(200);
+
+    // High current solar (600A) -> Recommended Main Breaker >= 1200A
+    const mdpMainHigh = getRecommendedMdpMainBreaker(600);
+    expect(mdpMainHigh).toBeGreaterThanOrEqual(1200);
   });
 });

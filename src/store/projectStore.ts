@@ -364,23 +364,37 @@ export class ProjectStore {
     this.notify();
   }
 
-  public removeSystem(systemId: string): void {
-    if (this.systems.size <= 1) {
-      return;
-    }
+  public removeSystem(systemId: string, deleteContents: boolean = true): void {
+    const sys = this.systems.get(systemId);
+    if (!sys) return;
 
-    this.systems.delete(systemId);
-    const fallbackSys = this.getSystems()[0];
+    if (deleteContents) {
+      const zoneIdsToDelete = Array.from(this.zones.values())
+        .filter(z => z.systemId === systemId)
+        .map(z => z.id);
 
-    for (const zone of this.zones.values()) {
-      if (zone.systemId === systemId) {
-        this.linkZoneToSystem(zone.id, fallbackSys.id);
+      for (const zId of zoneIdsToDelete) {
+        this.removeZone(zId);
+      }
+    } else {
+      const fallbackSys = this.getSystems().find(s => s.id !== systemId);
+      if (fallbackSys) {
+        for (const zone of this.zones.values()) {
+          if (zone.systemId === systemId) {
+            this.linkZoneToSystem(zone.id, fallbackSys.id);
+          }
+        }
       }
     }
 
-    if (this.selectedSystemId === systemId) {
-      this.selectedSystemId = fallbackSys ? fallbackSys.id : null;
+    this.systems.delete(systemId);
+
+    if (this.systems.size === 0) {
+      this.ensureDefaultSystem();
+    } else if (this.selectedSystemId === systemId) {
+      this.selectedSystemId = this.getSystems()[0].id;
     }
+
     this.notify();
   }
 
@@ -1394,10 +1408,12 @@ export class ProjectStore {
   }
 
   public getSelectedZone(): ArrayZone | undefined {
+    if (this.selectedPanelId !== null) return undefined;
     return this.selectedZoneId ? this.zones.get(this.selectedZoneId) : undefined;
   }
 
   public getSelectedZones(): ArrayZone[] {
+    if (this.selectedPanelId !== null) return [];
     const list: ArrayZone[] = [];
     for (const id of this.selectedZoneIds) {
       const z = this.zones.get(id);
@@ -1411,6 +1427,7 @@ export class ProjectStore {
   }
 
   public getSelectedZoneIds(): string[] {
+    if (this.selectedPanelId !== null) return [];
     if (this.selectedZoneIds.size > 0) {
       return Array.from(this.selectedZoneIds);
     }
@@ -1418,7 +1435,7 @@ export class ProjectStore {
   }
 
   public isZoneSelected(zoneId: string): boolean {
-    return this.selectedZoneIds.has(zoneId) || this.selectedZoneId === zoneId;
+    return this.selectedPanelId === null && (this.selectedZoneIds.has(zoneId) || this.selectedZoneId === zoneId);
   }
 
   public getSelectedPanel(): SolarPanelObject | undefined {
@@ -1466,6 +1483,9 @@ export class ProjectStore {
     }
 
     if (isMulti) {
+      if (this.selectedZoneId && !this.selectedZoneIds.has(this.selectedZoneId)) {
+        this.selectedZoneIds.add(this.selectedZoneId);
+      }
       if (this.selectedZoneIds.has(zoneId)) {
         this.selectedZoneIds.delete(zoneId);
         if (this.selectedZoneId === zoneId) {
@@ -1511,9 +1531,10 @@ export class ProjectStore {
     if (panelId) {
       const p = this.panels.get(panelId);
       if (p) {
-        this.selectedZoneId = p.zoneId;
         this.selectedSystemId = p.systemId;
       }
+      this.selectedZoneId = null;
+      this.selectedZoneIds.clear();
     }
     this.notify();
   }
@@ -1586,6 +1607,8 @@ export class ProjectStore {
     }
 
     this.selectedZoneId = id;
+    this.selectedZoneIds.clear();
+    this.selectedZoneIds.add(id);
     this.selectedPanelId = null;
 
     this.regenerateZonePanels(id, false);
@@ -1894,6 +1917,11 @@ export class ProjectStore {
   }
 
   public deleteSelected(): 'keepout' | 'zones' | 'zone' | null {
+    if (this.selectedPanelId) {
+      const pid = this.selectedPanelId;
+      this.togglePanelActive(pid);
+      return null;
+    }
     if (this.selectedKeepOutId) {
       const koId = this.selectedKeepOutId;
       if (this.deleteKeepOut(koId)) {

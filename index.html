@@ -59,13 +59,16 @@
         <div id="search-results" class="search-results-dropdown"></div>
       </div>
 
-      <!-- Main View Tabs (Map View vs Single Line Diagram) -->
+      <!-- Main View Tabs (Map View vs Single Line Diagram vs BOQ & Costing) -->
       <nav class="header-view-tabs" role="tablist" aria-label="Main Application Views">
         <button id="btn-view-map" class="btn-view-tab active" data-view="map" role="tab" aria-selected="true" title="Switch to Satellite Map CAD View">
           <span class="icon">🗺️</span> Map View
         </button>
         <button id="btn-view-sld" class="btn-view-tab" data-view="sld" role="tab" aria-selected="false" title="Switch to 2D Wireframe Single Line Diagram View of Selected System">
           <span class="icon">⚡</span> Single Line Diagram
+        </button>
+        <button id="btn-view-boq" class="btn-view-tab" data-view="boq" role="tab" aria-selected="false" title="Switch to Construction Management BOQ, DUPA & Costed BOM Costing View">
+          <span class="icon">💰</span> BOQ &amp; Costing
         </button>
       </nav>
 
@@ -125,6 +128,9 @@
         </button>
         <button id="btn-open-tables" class="btn btn-secondary" title="View Arrays, Systems, Raceways & Panels in Table View">
           📊 Table View
+        </button>
+        <button id="btn-open-boq" class="btn btn-secondary" style="color: #10b981; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); font-weight: 600;" title="View Bill of Quantities (BOQ) & Detailed Unit Price Analysis (DUPA) Costing">
+          💰 BOQ &amp; DUPA
         </button>
         <button id="btn-open-registry" class="btn btn-secondary" title="View tracked solar panel objects" style="display: none;">
           📋 Panel Registry
@@ -240,6 +246,11 @@
       <!-- Center: Single Line Diagram 2D Wireframe Workspace -->
       <section id="sld-workspace" class="sld-workspace-container" style="display: none;">
         <div id="sld-workspace-mount" class="sld-workspace-mount"></div>
+      </section>
+
+      <!-- Center: Construction Management BOQ, DUPA & Costed BOM Workspace -->
+      <section id="boq-workspace" class="boq-workspace-container" style="display: none;">
+        <div id="boq-workspace-mount" class="boq-workspace-mount"></div>
       </section>
     </main>
 

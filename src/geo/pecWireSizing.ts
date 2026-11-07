@@ -318,3 +318,163 @@ export function calculatePecVoltageDrop(
     isCompliant
   };
 }
+
+/**
+ * Standard dry-type and oil-immersed power transformer kVA ratings per ANSI/IEEE C57 & IEC 60076.
+ */
+export const STANDARD_TRANSFORMER_KVA_RATINGS: number[] = [
+  15, 25, 30, 37.5, 45, 50, 75, 100, 112.5, 125, 150, 175, 200, 225, 250, 300, 400, 500, 630, 750, 1000, 1250, 1500, 2000, 2500
+];
+
+export interface PecTransformerDesign {
+  required: boolean;
+  kvaRating: number;
+  transformerKva: number;
+  transformerType: 'step_up' | 'step_down' | 'isolation';
+  type: 'step_up' | 'step_down' | 'isolation';
+  vectorGroup: string;
+  impedancePercent: number;
+  primaryVoltageV: number;
+  secondaryVoltageV: number;
+  primaryRatedCurrentA: number;
+  primaryFullLoadCurrentA: number;
+  primaryDesignCurrentA: number;
+  primaryOcpdRatingA: number;
+  secondaryRatedCurrentA: number;
+  secondaryFullLoadCurrentA: number;
+  secondaryDesignCurrentA: number;
+  secondaryOcpdRatingA: number;
+  primaryConductors: PecWireSizingResult;
+  primaryPecSizing: PecWireSizingResult;
+  secondaryConductors: PecWireSizingResult;
+  secondaryPecSizing: PecWireSizingResult;
+  label: string;
+  compactCallout: string;
+}
+
+/**
+ * Sizing of isolation / step-up / step-down power transformer per Philippine Electrical Code (PEC Article 4.50 & 6.90).
+ * Required whenever Inverter AC Voltage != System Tapping Point Voltage.
+ */
+export function sizePecTransformer(
+  ratedAcKw: number,
+  phase: AcPhaseType,
+  inverterVoltageV: number,
+  systemVoltageV: number
+): PecTransformerDesign {
+  const isThreePhase = phase === 'three_phase';
+  const vPri = Math.max(100, inverterVoltageV);
+  const vSec = Math.max(100, systemVoltageV);
+  const required = vPri !== vSec;
+  const kw = Math.max(0.1, ratedAcKw);
+
+  if (!required) {
+    const defaultFeeder = sizePecAcFeeder(kw, phase, vPri, 'ac_main');
+    return {
+      required: false,
+      kvaRating: 0,
+      transformerKva: 0,
+      transformerType: 'isolation',
+      type: 'isolation',
+      vectorGroup: isThreePhase ? 'Dyn11 (Δ-Y)' : '1Φ Isolation',
+      impedancePercent: 0,
+      primaryVoltageV: vPri,
+      secondaryVoltageV: vSec,
+      primaryRatedCurrentA: defaultFeeder.ratedCurrentA,
+      primaryFullLoadCurrentA: defaultFeeder.ratedCurrentA,
+      primaryDesignCurrentA: defaultFeeder.designCurrentA,
+      primaryOcpdRatingA: defaultFeeder.ocpdRatingA,
+      secondaryRatedCurrentA: defaultFeeder.ratedCurrentA,
+      secondaryFullLoadCurrentA: defaultFeeder.ratedCurrentA,
+      secondaryDesignCurrentA: defaultFeeder.designCurrentA,
+      secondaryOcpdRatingA: defaultFeeder.ocpdRatingA,
+      primaryConductors: defaultFeeder,
+      primaryPecSizing: defaultFeeder,
+      secondaryConductors: defaultFeeder,
+      secondaryPecSizing: defaultFeeder,
+      label: 'No Transformer Required (Voltages Match)',
+      compactCallout: 'No XFM'
+    };
+  }
+
+  // Sizing kVA: minimum continuous design duty is 1.25 * kW
+  const minKva = kw * 1.25;
+  let chosenKva = STANDARD_TRANSFORMER_KVA_RATINGS[STANDARD_TRANSFORMER_KVA_RATINGS.length - 1];
+  for (const kva of STANDARD_TRANSFORMER_KVA_RATINGS) {
+    if (kva >= minKva) {
+      chosenKva = kva;
+      break;
+    }
+  }
+  if (minKva > chosenKva) {
+    chosenKva = Math.ceil(minKva / 250) * 250;
+  }
+
+  const transformerType: 'step_up' | 'step_down' | 'isolation' =
+    vSec > vPri ? 'step_up' : vSec < vPri ? 'step_down' : 'isolation';
+
+  const vectorGroup = isThreePhase ? 'Dyn11 (Δ-Y)' : '1Φ Isolation';
+  const impedancePercent = chosenKva <= 50 ? 4.0 : chosenKva <= 500 ? 4.5 : 5.75;
+
+  // Primary currents (Inverter side)
+  const primaryRatedCurrentA = Number(
+    ((chosenKva * 1000) / (isThreePhase ? Math.sqrt(3) * vPri : vPri)).toFixed(1)
+  );
+  const primaryDesignCurrentA = Number((primaryRatedCurrentA * 1.25).toFixed(1));
+  const primaryOcpdRatingA = getStandardOcpdRating(primaryDesignCurrentA);
+  const primaryConductors = sizePecAcFeeder(kw, phase, vPri, 'ac_inverter');
+
+  // Secondary currents (Grid/MDP tapping side)
+  const secondaryRatedCurrentA = Number(
+    ((chosenKva * 1000) / (isThreePhase ? Math.sqrt(3) * vSec : vSec)).toFixed(1)
+  );
+  const secondaryDesignCurrentA = Number((secondaryRatedCurrentA * 1.25).toFixed(1));
+  const secondaryOcpdRatingA = getStandardOcpdRating(secondaryDesignCurrentA);
+  const secondaryConductors = sizePecAcFeeder(kw, phase, vSec, 'ac_main');
+
+  const typeLabel =
+    transformerType === 'step_up'
+      ? `Step-Up (${vPri}V ➔ ${vSec}V)`
+      : transformerType === 'step_down'
+      ? `Step-Down (${vPri}V ➔ ${vSec}V)`
+      : `Isolation (${vPri}V)`;
+
+  const label = `${chosenKva} kVA ${typeLabel} ${vectorGroup}`;
+  const compactCallout = `${chosenKva}kVA ${vPri}/${vSec}V ${transformerType === 'step_up' ? '▲' : '▼'}`;
+
+  return {
+    required,
+    kvaRating: chosenKva,
+    transformerKva: chosenKva,
+    transformerType,
+    type: transformerType,
+    vectorGroup,
+    impedancePercent,
+    primaryVoltageV: vPri,
+    secondaryVoltageV: vSec,
+    primaryRatedCurrentA,
+    primaryFullLoadCurrentA: primaryRatedCurrentA,
+    primaryDesignCurrentA,
+    primaryOcpdRatingA,
+    secondaryRatedCurrentA,
+    secondaryFullLoadCurrentA: secondaryRatedCurrentA,
+    secondaryDesignCurrentA,
+    secondaryOcpdRatingA,
+    primaryConductors,
+    primaryPecSizing: primaryConductors,
+    secondaryConductors,
+    secondaryPecSizing: secondaryConductors,
+    label,
+    compactCallout
+  };
+}
+
+/**
+ * Computes recommended rating for Main Distribution Panel (MDP) main circuit breaker.
+ */
+export function getRecommendedMdpMainBreaker(pvBreakerRatingA: number, customRatingA?: number): number {
+  if (customRatingA && customRatingA > 0) return customRatingA;
+  // In commercial/industrial installations, MDP services facility load as well as PV (typically 2x PV breaker or at least 200A)
+  const minMdpA = Math.max(pvBreakerRatingA * 2.0, 200);
+  return getStandardOcpdRating(minMdpA);
+}

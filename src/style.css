@@ -1525,6 +1525,12 @@ html, body {
   border-color: var(--accent-blue);
 }
 
+.zone-list-item.selected {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf840;
+}
+
 .color-badge {
   width: 12px;
   height: 12px;
@@ -3222,6 +3228,72 @@ dialog::backdrop {
   animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
 
+/* AC Interconnection Point of Common Coupling (PCC) Station Marker */
+.pcc-station-div-icon {
+  background: transparent;
+  border: none;
+}
+
+.pcc-station-marker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.pcc-station-marker:active {
+  cursor: grabbing;
+}
+
+.pcc-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid #06b6d4;
+  color: #f8fafc;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7), 0 0 12px rgba(6, 182, 212, 0.4);
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.pcc-station-marker.selected .pcc-badge {
+  border-color: #38bdf8;
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.9), 0 4px 15px rgba(0, 0, 0, 0.8);
+}
+
+.pcc-icon {
+  font-size: 14px;
+}
+
+.pcc-title {
+  letter-spacing: 0.3px;
+}
+
+.pcc-pole {
+  width: 2px;
+  height: 12px;
+  background: #06b6d4;
+  box-shadow: 0 0 6px #06b6d4;
+}
+
+.pcc-pulse {
+  position: absolute;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #06b6d4;
+  opacity: 0.8;
+  animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
 @keyframes pulse-ring {
   0% {
     transform: scale(0.6);
@@ -3325,6 +3397,18 @@ dialog::backdrop {
   background: rgba(15, 23, 42, 0.95);
   color: #10b981;
   border-color: #059669;
+}
+
+.raceway-marker-badge.ac-feeder {
+  background: rgba(15, 23, 42, 0.95);
+  color: #06b6d4;
+  border-color: #0891b2;
+}
+
+.raceway-marker-badge.ac-pcc {
+  background: rgba(15, 23, 42, 0.95);
+  color: #38bdf8;
+  border-color: #0284c7;
 }
 
 /* Custom Raceway Draggable Nodes & Midpoint Add-Node Handles */
@@ -4117,4 +4201,37 @@ dialog::backdrop {
 .btn-ghost:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ========================================================
+   Construction Management BOQ, DUPA & Costed BOM Workspace
+   ======================================================== */
+.boq-workspace-container {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background-color: #0b1329;
+}
+
+.boq-workspace-mount {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.boq-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #f8fafc !important;
+}
+
+.boq-summary-row:hover {
+  background: rgba(56, 189, 248, 0.06) !important;
+}
+
+.boq-scope-mode {
+  border-bottom-color: rgba(16, 185, 129, 0.3) !important;
 }

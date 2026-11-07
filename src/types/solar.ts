@@ -102,6 +102,8 @@ export interface KeepOutPolygon {
 
 export type AcPhaseType = 'three_phase' | 'single_phase';
 
+export type MdpTapType = 'load_side' | 'line_side';
+
 export interface InverterConfig {
   id: string;
   modelName: string;
@@ -131,6 +133,10 @@ export interface SolarSystem {
   acInterconnectionLocation?: LatLngPoint | null; // Geolocation coordinates of AC Point of Common Coupling (PCC / Meter)
   acInterconnectionElevationM?: number;          // Ground elevation of AC Interconnection Point (meters, default 0)
   acRaceway?: RacewayConfig | null;              // AC Feeder Raceway from Inverter Station to PCC
+  systemVoltageV?: number;                       // Nominal AC line voltage at the tapping point / MDP (V)
+  hasAcCombiner?: boolean;                       // Whether an AC Combiner & Collector Breaker are used (default true)
+  mdpTapType?: MdpTapType;                       // 'load_side' (backfed MDP bus) or 'line_side' (supply-side tap before main breaker)
+  mdpMainBreakerA?: number;                      // Rating of Main Distribution Panel (MDP) main breaker in Amps
 }
 
 export interface SolarPanelObject {
@@ -173,9 +179,10 @@ export interface SolarPanelObject {
 export interface RacewayConfig {
   id: string;
   name?: string;
-  path: LatLngPoint[];      // Polyline route vertices from array to inverter
+  path: LatLngPoint[];      // Polyline route vertices from array to inverter or inverter to PCC
   elevationChangeM: number; // Vertical elevation change / riser drop along this raceway (meters)
   systemId?: string;        // Optional associated system ID (for shared homerun trunk)
+  racewayType?: 'dc_homerun' | 'ac_feeder'; // Default 'dc_homerun'
 }
 
 export interface StringCableLength {
@@ -216,6 +223,35 @@ export interface SystemCableSummary {
   avgStringCableLengthM: number;
   totalRacewayLengthM: number;      // Sum of horizontal raceway paths in this system
   strings: StringCableLength[];
+}
+
+export interface AcFeederSummary {
+  systemId: string;
+  inverterLocation: LatLngPoint | null;
+  inverterElevationM: number;
+  acInterconnectionLocation: LatLngPoint | null;
+  acInterconnectionElevationM: number;
+  directDistanceM: number;
+  racewayLengthM: number;
+  elevationDeltaM: number;
+  totalRunM: number;
+  hasRaceway: boolean;
+  phase: AcPhaseType;
+  voltageV: number;
+  ratedCurrentA: number;
+  designCurrentA: number;
+  conductorCallout: string;
+  conduitCallout: string;
+  voltageDropV: number;
+  voltageDropPercent: number;
+  isCompliant: boolean;
+  inverterVoltageV?: number;
+  systemVoltageV?: number;
+  hasTransformer?: boolean;
+  transformerKva?: number;
+  hasAcCombiner?: boolean;
+  mdpTapType?: MdpTapType;
+  mdpMainBreakerA?: number;
 }
 
 export type BasemapProvider =
@@ -274,6 +310,69 @@ export interface ArrayZone {
   elevationDeltaM?: number;       // Fallback elevation difference if no raceway is drawn
 }
 
+export interface DupaMaterialRow {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitCostPhp: number;
+  amountPhp: number;
+  autoSourceKey?: string; // Links row to automated CAD/SLD QTO key for smart re-sync
+}
+
+export interface DupaLaborRow {
+  id: string;
+  description: string; // Trade / Role Description
+  count: number;       // No. of personnel
+  days: number;        // Duration in days
+  unit: string;        // e.g. 'pax'
+  ratePerDayPhp: number;
+  amountPhp: number;
+}
+
+export interface DupaEquipmentRow {
+  id: string;
+  description: string; // Equipment / Machinery Description
+  count: number;       // No. of units
+  days: number;        // Duration in days
+  unit: string;        // e.g. 'unit', 'set', 'trip', 'lot'
+  ratePerDayPhp: number;
+  amountPhp: number;
+}
+
+export interface DupaWorkItem {
+  itemNo: string;          // 'D1' .. 'D9'
+  category: string;        // 'Solar Works'
+  description: string;     // Work Description
+  durationDays: number;    // Activity duration in days
+  quantity: number;        // BOQ Quantity (e.g. 1 for lot, 167 for pc)
+  unit: string;            // 'lot' | 'pc' | 'set'
+  materials: DupaMaterialRow[];
+  labor: DupaLaborRow[];
+  equipment: DupaEquipmentRow[];
+  // Computed Summary Fields:
+  totalMaterialsPhp: number;
+  totalLaborPhp: number;
+  totalEquipmentPhp: number;
+  estimatedDirectCostPhp: number; // EDC = A + B + C
+  ocmPercent: number;             // Default 10.0
+  ocmAmountPhp: number;
+  profitPercent: number;          // Default 8.0
+  profitAmountPhp: number;
+  vatPercent: number;             // Default 6.0
+  vatAmountPhp: number;
+  totalItemCostPhp: number;       // EDC + OCM + Profit + VAT
+  unitCostPerItemPhp: number;     // totalItemCostPhp / quantity
+}
+
+export interface ProjectBoqState {
+  ocmPercent: number;      // Default 10%
+  profitPercent: number;   // Default 8%
+  vatPercent: number;      // Default 6%
+  items: DupaWorkItem[];   // Source-of-truth DUPA items (D1..D9+)
+  lastSyncedAt?: string;
+}
+
 export interface ProjectData {
   version: string;
   projectName: string;
@@ -289,6 +388,7 @@ export interface ProjectData {
   selectedZoneId?: string | null;
   homerunRaceway?: RacewayConfig | null; // Shared system/project homerun trunk
   stringTraverseDirection?: StringTraverseDirection; // Global / project-level default traversal preference
+  boqData?: ProjectBoqState;
 }
 
 // Datasheet Default: ZNShine 600W Bifacial (https://energiasirius.com/wp-content/uploads/2025/01/Datasheet-ZN-SHine-600W-Bifacial.pdf)
@@ -350,8 +450,8 @@ export const STANDARD_INVERTER_CAPACITIES_KW: number[] = [
   3, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300, 500
 ];
 
-export const STANDARD_AC_VOLTAGES_3PHASE: number[] = [380, 400, 415, 480, 208, 220, 690, 800];
-export const STANDARD_AC_VOLTAGES_1PHASE: number[] = [220, 230, 240, 120, 110];
+export const STANDARD_AC_VOLTAGES_3PHASE: number[] = [230, 380, 400, 415, 480, 208, 220, 690, 800];
+export const STANDARD_AC_VOLTAGES_1PHASE: number[] = [230, 220, 240, 120, 110];
 
 export const GENERIC_INVERTER_PRESETS: InverterConfig[] = [
   {
