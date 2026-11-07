@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solar Geo Planner — Satellite Array Designer</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header Navbar -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">☀️</span>
+        <span>Solar Geo Planner</span>
+        <span class="brand-badge">CAD v1.0</span>
+      </div>
+
+      <!-- Cloud Sync & Multi-PC Project Switcher -->
+      <div class="project-header-group">
+        <div id="cloud-sync-status" class="sync-status-pill sync-syncing" title="Real-time multi-PC Cloud Sync Status">
+          <span class="sync-dot"></span>
+          <span id="cloud-sync-label">☁️ Syncing...</span>
+        </div>
+
+        <div class="project-dropdown-container">
+          <button id="btn-project-dropdown" class="btn-project-select" title="Switch or manage cloud-synchronized projects">
+            <span class="icon">📁</span>
+            <span id="current-project-name">Solar Geo Project</span>
+            <span class="dropdown-caret">▾</span>
+          </button>
+          <div id="project-dropdown-menu" class="project-dropdown-menu" style="display: none;">
+            <div class="dropdown-header">Cloud Projects</div>
+            <div id="project-dropdown-list" class="project-dropdown-list"></div>
+            <div class="dropdown-divider"></div>
+            <button id="btn-dropdown-new-project" class="dropdown-action-btn">
+              <span>➕</span> New Project
+            </button>
+            <button id="btn-dropdown-rename-project" class="dropdown-action-btn">
+              <span>✏️</span> Rename Project
+            </button>
+            <button id="btn-dropdown-delete-project" class="dropdown-action-btn danger">
+              <span>🗑️</span> Delete Project
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Address / Coordinates Geocoding Search -->
+      <div class="search-container">
+        <span class="search-icon">🔍</span>
+        <input
+          type="search"
+          id="location-search-input"
+          class="search-input"
+          placeholder="Search location or enter lat, lng (e.g. 37.7749, -122.4194)..."
+          autocomplete="off"
+        />
+        <div id="search-results" class="search-results-dropdown"></div>
+      </div>
+
+      <!-- Main View Tabs (Map View vs Single Line Diagram) -->
+      <nav class="header-view-tabs" role="tablist" aria-label="Main Application Views">
+        <button id="btn-view-map" class="btn-view-tab active" data-view="map" role="tab" aria-selected="true" title="Switch to Satellite Map CAD View">
+          <span class="icon">🗺️</span> Map View
+        </button>
+        <button id="btn-view-sld" class="btn-view-tab" data-view="sld" role="tab" aria-selected="false" title="Switch to 2D Wireframe Single Line Diagram View of Selected System">
+          <span class="icon">⚡</span> Single Line Diagram
+        </button>
+      </nav>
+
+      <!-- Consolidated CAD Quick Action Buttons -->
+      <div class="header-actions">
+        <!-- Consolidated CAD Draw Menu -->
+        <div class="cad-draw-dropdown-group" id="cad-draw-dropdown-group">
+          <button id="btn-hdr-draw-menu" class="btn btn-primary dropdown-toggle" aria-haspopup="true" aria-expanded="false" title="CAD Drawing Tools: Draw Arrays, Keep-Outs, Homeruns, or Place Inverters">
+            <span class="icon" id="hdr-draw-menu-icon">📐</span>
+            <span id="hdr-draw-menu-label">Draw Array</span>
+            <span class="dropdown-caret">▾</span>
+          </button>
+          <div class="cad-draw-popover-menu" id="cad-draw-popover-menu" role="menu" hidden>
+            <div class="dropdown-section-title">ARRAY BOUNDARIES</div>
+            <button id="btn-hdr-draw-roof" class="dropdown-item" role="menuitem" title="Draw rooftop array polygon">
+              <span class="icon">🏠</span>
+              <div class="dropdown-item-info">
+                <strong>Roof Array</strong>
+                <small>Flush / pitched rooftop solar layout</small>
+              </div>
+            </button>
+            <button id="btn-hdr-draw-ground" class="dropdown-item" role="menuitem" title="Draw ground mount array polygon">
+              <span class="icon">🌱</span>
+              <div class="dropdown-item-info">
+                <strong>Ground Array</strong>
+                <small>Racked / tilted ground solar field</small>
+              </div>
+            </button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-section-title">ELECTRICAL & OBSTACLES</div>
+            <button id="btn-hdr-draw-keepout" class="dropdown-item" role="menuitem" title="Draw obstacle / keep-out exclusion zone">
+              <span class="icon">🚫</span>
+              <div class="dropdown-item-info">
+                <strong>Keep-Out Obstacle</strong>
+                <small>HVAC, skylights, vents, setbacks</small>
+              </div>
+            </button>
+            <button id="btn-hdr-draw-homerun" class="dropdown-item" role="menuitem" title="Draw shared homerun raceway trunk">
+              <span class="icon">🛤️</span>
+              <div class="dropdown-item-info">
+                <strong>Shared Homerun Trunk</strong>
+                <small>Conduit path connecting arrays to inverter</small>
+              </div>
+            </button>
+            <button id="btn-hdr-draw-inverter" class="dropdown-item" role="menuitem" title="Place inverter powerhouse on map">
+              <span class="icon">⚡</span>
+              <div class="dropdown-item-info">
+                <strong>Inverter Power House</strong>
+                <small>Click map to place or relocate power station</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <button id="btn-toggle-labels" class="btn btn-secondary" title="Toggle satellite street/place labels">
+          🏷️ Labels
+        </button>
+        <button id="btn-open-tables" class="btn btn-secondary" title="View Arrays, Systems, Raceways & Panels in Table View">
+          📊 Table View
+        </button>
+        <button id="btn-open-registry" class="btn btn-secondary" title="View tracked solar panel objects" style="display: none;">
+          📋 Panel Registry
+        </button>
+        <button id="btn-export-json" class="btn btn-outline" title="Export Project JSON">
+          💾 Export
+        </button>
+        <button id="btn-import-json" class="btn btn-outline" title="Import Project JSON">
+          📂 Import
+        </button>
+        <input type="file" id="file-import-input" accept=".json,.geojson" style="display: none;" />
+      </div>
+    </header>
+
+    <!-- Top Tabbed CAD Ribbon -->
+    <nav id="ribbon" class="ribbon-bar-container"></nav>
+
+    <!-- Main Workspace (Full Width Satellite View or Single Line Diagram) -->
+    <main class="workspace-container">
+      <!-- Center: Satellite Map Canvas -->
+      <section id="map-workspace" class="map-container">
+        <div id="map"></div>
+
+        <!-- Floating Top-Left: View Filter & Tracing Controls -->
+        <div id="view-filter-bar" class="view-filter-toolbar">
+          <button id="btn-open-views-tab" class="btn btn-sm btn-outline view-btn" title="Open Map Views & Layer Checklist in Ribbon">
+            <span class="icon">👁️</span> Views & Presets
+          </button>
+          <button id="btn-toggle-xray" class="btn btn-sm btn-outline view-btn" title="Toggle Tracing Mode (Hides panels & fills so you can trace satellite obstacles clearly)">
+            <span class="icon">👁️</span> Tracing Mode
+          </button>
+          <button id="btn-toggle-multi-select" class="btn btn-sm btn-outline view-btn" title="Toggle Select All Arrays for batch setback and layout editing">
+            <span class="icon">✨</span> <span id="lbl-multi-select">Select All</span>
+          </button>
+
+          <div class="view-filter-group">
+            <span class="view-filter-label">Map:</span>
+            <select id="select-basemap" class="view-filter-select" title="Switch high-res satellite / map layer">
+              <option value="google-hybrid" selected>Google Satellite HD</option>
+              <option value="google-satellite">Google Sat (No Labels)</option>
+              <option value="esri">Esri Satellite</option>
+              <option value="osm">OpenStreetMap</option>
+              <option value="carto-light">Vicinity Map (Monochrome Light)</option>
+              <option value="carto-dark">Blueprint Wireframe (Dark)</option>
+            </select>
+          </div>
+
+          <div class="view-filter-group">
+            <span class="view-filter-label">Panels:</span>
+            <select id="select-panel-visibility" class="view-filter-select">
+              <option value="full">Full</option>
+              <option value="dimmed">Wireframe</option>
+              <option value="hidden">Hidden</option>
+            </select>
+          </div>
+
+          <div class="view-filter-group">
+            <span class="view-filter-label">Array Fill:</span>
+            <select id="select-fill-visibility" class="view-filter-select">
+              <option value="fill">Fill & Border</option>
+              <option value="outline">Outline Only</option>
+            </select>
+          </div>
+
+          <div class="view-filter-group">
+            <span class="view-filter-label">Obstacles:</span>
+            <select id="select-keepout-visibility" class="view-filter-select">
+              <option value="show">Show</option>
+              <option value="hide">Hide</option>
+            </select>
+          </div>
+
+          <div class="view-filter-group">
+            <span class="view-filter-label">Tilt:</span>
+            <select id="select-tilt-visibility" class="view-filter-select" title="Toggle CAD Downward Tilt Slope Arrows">
+              <option value="show">▼ Downward</option>
+              <option value="hide">Hide</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Floating Top-Right: Panel Inspector & System Summary -->
+        <div id="inspector" class="inspector-pane"></div>
+
+        <!-- Floating Active Drawing Status HUD -->
+        <div id="map-drawing-hud" class="map-hud-overlay map-drawing-hud" hidden role="status" aria-live="polite">
+          <div class="hud-pulse-dot"></div>
+          <div class="hud-info">
+            <strong id="hud-drawing-title">Drawing Array</strong>
+            <span id="hud-drawing-hint" class="hud-hint">Click map to add points</span>
+          </div>
+          <div class="hud-actions">
+            <button id="btn-hud-finish-draw" class="btn btn-xs btn-primary" title="Finish polygon (Enter)">✓ Finish</button>
+            <button id="btn-hud-cancel-draw" class="btn btn-xs btn-outline" title="Cancel drawing (Esc)">✕ Cancel</button>
+          </div>
+        </div>
+
+        <!-- Floating Selection & Quick Action HUD -->
+        <div id="map-selection-hud" class="map-hud-overlay map-selection-hud" hidden role="region" aria-label="Selected Element Actions">
+          <div class="hud-selection-badge" id="hud-sel-badge">📐</div>
+          <div class="hud-info">
+            <strong id="hud-sel-title">Roof Array 1</strong>
+            <span id="hud-sel-sub" class="hud-hint">32 Panels • 19.2 kWp</span>
+          </div>
+          <div class="hud-actions">
+            <button id="btn-hud-fit-element" class="btn btn-xs btn-outline" title="Center & fit element in view">🎯 Fit</button>
+            <button id="btn-hud-delete-element" class="btn btn-xs btn-danger" title="Delete selected element from map (Del / Backspace)">🗑️ Delete <kbd>Del</kbd></button>
+            <button id="btn-hud-deselect-element" class="btn btn-xs btn-ghost" title="Clear selection (Esc)">✕</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Center: Single Line Diagram 2D Wireframe Workspace -->
+      <section id="sld-workspace" class="sld-workspace-container" style="display: none;">
+        <div id="sld-workspace-mount" class="sld-workspace-mount"></div>
+      </section>
+    </main>
+
+    <!-- Solar Panel Object Registry Modal Dialog conforming to modern web guidance -->
+    <dialog id="registryModal" closedby="any" aria-labelledby="registryTitle">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="registryTitle">Solar Panel Object Registry (Stringing Readiness)</h2>
+          <button id="btn-close-modal" class="btn-icon" aria-label="Close dialog">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Populated dynamically by RegistryModalUI -->
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-export-modal-csv" class="btn btn-secondary">Export CSV Schedule</button>
+          <button id="btn-export-modal-geojson" class="btn btn-secondary">Export GeoJSON</button>
+          <button id="btn-export-modal-json" class="btn btn-primary">Export JSON</button>
+        </div>
+      </div>
+    </dialog>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

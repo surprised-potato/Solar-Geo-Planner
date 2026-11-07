@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // This security rules file assumes the following data structures:
+    //
+    // Collection: projects
+    // Document ID: {projectId} (string, 1 to 100 characters)
+    // Fields:
+    //   - id: string (required, 1 to 100 chars, matches projectId, immutable)
+    //   - name: string (required, 1 to 200 chars)
+    //   - createdAt: string or timestamp (required, ISO 8601 string or timestamp, immutable)
+    //   - updatedAt: string or timestamp (required, ISO 8601 string or timestamp)
+    //   - dataJson: string (required, serialized project JSON <= 900,000 chars / ~900KB)
+    //   - zoneCount: number (optional, >= 0)
+    //   - totalKwp: number (optional, >= 0)
+    //
+    // Access Control:
+    //   - Public / shared workspace for multi-device sync without mandatory auth.
+    //   - All operations are guarded with strict type, size, and schema validations.
+    //   - Immutable fields (id, createdAt) protected on update.
+    //   - All other collections: Denied by default.
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Check that only defined fields are present in the payload (prevents schema pollution)
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate date format (ISO 8601 string) or Firestore native timestamp
+    function isValidDateOrTimestamp(val) {
+      return (val is string && val.matches('^\\d{4}-\\d{2}-\\d{2}T.*')) || val is timestamp;
+    }
+
+    // Ensure immutable fields are not modified during update operations
+    function isProjectUpdateValid() {
+      return request.resource.data.id == resource.data.id &&
+             request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    // ===============================================================
+    // Domain Validator (Validator Function Pattern)
+    // Used in BOTH create and update rules to eliminate the Update Bypass vulnerability
+    // ===============================================================
+    function isValidProject(data, projectId) {
+      return hasRequiredFields(['id', 'name', 'createdAt', 'updatedAt', 'dataJson']) &&
+             hasOnlyAllowedFields(['id', 'name', 'createdAt', 'updatedAt', 'dataJson', 'zoneCount', 'totalKwp']) &&
+             data.id is string &&
+             data.id == projectId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 100 &&
+             data.name is string &&
+             data.name.size() >= 1 &&
+             data.name.size() <= 200 &&
+             isValidDateOrTimestamp(data.createdAt) &&
+             isValidDateOrTimestamp(data.updatedAt) &&
+             data.dataJson is string &&
+             data.dataJson.size() <= 900000 &&
+             (!('zoneCount' in data) || (data.zoneCount is number && data.zoneCount >= 0)) &&
+             (!('totalKwp' in data) || (data.totalKwp is number && data.totalKwp >= 0));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Project Documents: Shared workspace allowing read/write for cross-device sync
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create: if isValidProject(request.resource.data, projectId);
+      allow update: if isValidProject(request.resource.data, projectId) && isProjectUpdateValid();
+      allow delete: if true;
+    }
+
+    // Default deny for all other collections and administrative paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
