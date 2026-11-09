@@ -217,3 +217,23 @@ describe('XLSX export', () => {
     expect(uniqueSheetName('DUPA A1', used)).toBe('DUPA A1 (2)');
   });
 });
+
+describe('rate library via the store', () => {
+  it('one library price updates every farm, and survives a re-sync', () => {
+    try { localStorage.clear(); } catch { /* no localStorage */ }
+    const store = new ProjectStore();
+    store.clearAll();
+    store.addPoultryHouses({ ...base, count: 1 });
+    store.addPoultryHouses({ ...base, anchor: { lat: 15.01, lng: 120.5 }, count: 1 });
+    const boq = store.getBoqState(undefined, true);
+    const before = getBoqProjectTotal(boq).grandTotal;
+    const changed = store.setLibraryRate('labor', 'Helper', 777);
+    expect(changed).toBeGreaterThan(1); // rows in both farms
+    const after = getBoqProjectTotal(store.getBoqState()).grandTotal;
+    expect(after).not.toBe(before);
+
+    const resynced = store.syncBoqFromCad();
+    const helperRates = new Set(resynced.items.flatMap(i => i.labor.filter(l => l.description === 'Helper').map(l => l.ratePerDayPhp)));
+    expect([...helperRates]).toEqual([777]);
+  });
+});

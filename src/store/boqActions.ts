@@ -3,6 +3,7 @@
  */
 import { ProjectBoqState, DupaWorkItem } from '../types/solar';
 import { generateBoqFromRegistryAndSld, recalculateDupaItem } from '../geo/boqCalculator';
+import { applyRate, importRateCsv, RateKind } from '../geo/boq/rateLibrary';
 import type { ProjectStore } from './projectStore';
 
 export function getBoqState(this: ProjectStore, systemId?: string, forceRegenerate: boolean = false): ProjectBoqState {
@@ -85,4 +86,19 @@ export function toggleLightningProtection(this: ProjectStore, include?: boolean)
   // Re-generate BOQ preserving user rates and markups
   this.boqState = generateBoqFromRegistryAndSld(this, undefined, boq);
   this.notify();
+}
+
+/** Sets one library price on every DUPA row that uses it (all farms). Returns rows changed. */
+export function setLibraryRate(this: ProjectStore, kind: RateKind, description: string, rate: number): number {
+  const boq = this.getBoqState();
+  const changed = applyRate(boq, kind, description, rate);
+  if (changed > 0) this.notify();
+  return changed;
+}
+
+/** Applies a rate-library CSV (see rateLibraryToCsv) to the current BOQ. */
+export function importRateLibrary(this: ProjectStore, csv: string): { applied: number; skipped: number } {
+  const res = importRateCsv(this.getBoqState(), csv);
+  if (res.applied > 0) this.notify();
+  return res;
 }

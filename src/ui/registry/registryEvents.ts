@@ -26,7 +26,13 @@ export function attachModalListeners(this: RegistryModalUI): void {
   if (this.activeTab === 'boq') {
     const mountEl = this.dialog.querySelector('#modal-boq-mount') as HTMLElement;
     if (mountEl) {
-      new BoqAndDupaUI(mountEl, this.store, this.filterSystemId);
+      // One long-lived view: re-creating it on every modal render leaked store subscribers and
+      // reset the BOQ tab back to the summary after each edit.
+      if (this.boqUi) {
+        this.boqUi.rebind(mountEl, this.filterSystemId);
+      } else {
+        this.boqUi = new BoqAndDupaUI(mountEl, this.store, this.filterSystemId);
+      }
     }
   }
 

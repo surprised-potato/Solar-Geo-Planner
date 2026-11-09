@@ -16,6 +16,7 @@ import { renderKeepOutsTable as renderKeepOutsTableImpl } from './registry/keepO
 import { renderBuildingsTable as renderBuildingsTableImpl } from './registry/buildingsTable';
 import { renderEquipmentTable as renderEquipmentTableImpl } from './registry/equipmentTable';
 import { escapeHtml } from '../utils/html';
+import type { BoqAndDupaUI } from './boqView';
 import { enableBackdropDismiss } from '../utils/dialog';
 
 export type TableViewTab = 'buildings' | 'equipment' | 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld' | 'boq';
@@ -24,6 +25,7 @@ export class RegistryModalUI {
   dialog: HTMLDialogElement;
   store: ProjectStore;
   mapController?: MapController;
+  boqUi?: BoqAndDupaUI;
   activeTab: TableViewTab = 'arrays';
   filterSystemId: string = 'all';
   filterZoneId: string = 'all';

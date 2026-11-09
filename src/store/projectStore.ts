@@ -27,6 +27,7 @@ import {
   BessConfig,
   InterconnectionConfig
 } from '../types/solar';
+import type { RateKind } from '../geo/boq/rateLibrary';
 import { SolarYieldResult } from '../geo/solarYield';
 import { scaleAnnualLoad } from '../geo/loadProfile';
 import { SimulationResult, SimulationOptions } from '../geo/energySimulation';
@@ -85,7 +86,7 @@ import { updateKeepOutVertices as updateKeepOutVerticesImpl, addKeepOutVertex as
 import { getPanelsForSystem as getPanelsForSystemImpl, togglePanelActive as togglePanelActiveImpl, removePanel as removePanelImpl, updatePanelString as updatePanelStringImpl, updateStringAssignment as updateStringAssignmentImpl } from './panelActions';
 import { getSystemSummary as getSystemSummaryImpl, getSolarYieldEstimate as getSolarYieldEstimateImpl, setCustomSolarResource as setCustomSolarResourceImpl, getLoadProfile as getLoadProfileImpl, ensureLoadProfile as ensureLoadProfileImpl, applyLoadArchetype as applyLoadArchetypeImpl, updateMonthlyLoad as updateMonthlyLoadImpl, getSimulationResult as getSimulationResultImpl } from './energyActions';
 import { setFarmBess as setFarmBessImpl, setInterconnection as setInterconnectionImpl, addSection as addSectionImpl, addPoultryHouses as addPoultryHousesImpl, detachZoneFromBuildings as detachZoneFromBuildingsImpl, AddPoultryHousesOptions } from './buildingActions';
-import { getBoqState as getBoqStateImpl, syncBoqFromCad as syncBoqFromCadImpl, updateBoqMarkups as updateBoqMarkupsImpl, updateDupaWorkItem as updateDupaWorkItemImpl, toggleLightningProtection as toggleLightningProtectionImpl } from './boqActions';
+import { setLibraryRate as setLibraryRateImpl, importRateLibrary as importRateLibraryImpl, getBoqState as getBoqStateImpl, syncBoqFromCad as syncBoqFromCadImpl, updateBoqMarkups as updateBoqMarkupsImpl, updateDupaWorkItem as updateDupaWorkItemImpl, toggleLightningProtection as toggleLightningProtectionImpl } from './boqActions';
 
 export type DrawingMode = 'none' | 'zone' | 'keepout' | 'inverter' | 'raceway' | 'ac_interconnection' | 'ac_raceway' | 'match_props';
 
@@ -758,6 +759,14 @@ export class ProjectStore {
 
   public addSection(kind: ProjectSection['kind'] = 'farm', name?: string): ProjectSection {
     return addSectionImpl.call(this, kind, name);
+  }
+
+  public setLibraryRate(kind: RateKind, description: string, rate: number): number {
+    return setLibraryRateImpl.call(this, kind, description, rate);
+  }
+
+  public importRateLibrary(csv: string): { applied: number; skipped: number } {
+    return importRateLibraryImpl.call(this, csv);
   }
 
   public setFarmBess(sectionId: string, bess: BessConfig | null): void {

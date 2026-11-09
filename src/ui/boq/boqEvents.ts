@@ -4,6 +4,7 @@
 import { exportBoqAndDupaCsv, exportCostedBomCsv, normalizeDupaQuotes } from '../../geo/boqCalculator';
 import { downloadBlob, downloadCsv, safeFileName } from '../../utils/download';
 import { buildBoqXlsx } from '../../geo/boq/xlsxExport';
+import { attachRatesTabListeners } from './ratesTab';
 import type { BoqAndDupaUI } from '../boqView';
 
 // ========================================================
@@ -19,6 +20,8 @@ export function attachEventListeners(this: BoqAndDupaUI): void {
       }
     });
   });
+
+  attachRatesTabListeners.call(this);
 
   // 2. Jump to DUPA or BOQ
   this.container.querySelectorAll('.btn-jump-dupa').forEach(btn => {

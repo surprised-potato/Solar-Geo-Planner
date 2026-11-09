@@ -4,6 +4,7 @@ import { DupaWorkItem } from '../types/solar';
 import { escapeHtml } from '../utils/html';
 import { renderBoqSummaryTab as renderBoqSummaryTabImpl, renderCostedBomTab as renderCostedBomTabImpl } from './boq/summaryTabs';
 import { renderDedicatedDupaTab as renderDedicatedDupaTabImpl } from './boq/dupaTab';
+import { renderRatesTab as renderRatesTabImpl } from './boq/ratesTab';
 import { attachEventListeners as attachEventListenersImpl } from './boq/boqEvents';
 
 export type BoqViewTab = 'boq' | 'bom' | string;
@@ -35,6 +36,13 @@ export class BoqAndDupaUI {
       this.render();
     });
 
+    this.render();
+  }
+
+  /** Points this view at a freshly rendered mount element, keeping the active tab and store subscription. */
+  public rebind(container: HTMLElement, systemId: string): void {
+    this.container = container;
+    this.currentSystemId = systemId;
     this.render();
   }
 
@@ -195,6 +203,10 @@ export class BoqAndDupaUI {
             <span>📦</span> Costed BOM
           </button>
 
+          <button class="boq-tab-btn ${this.activeTab === 'rates' ? 'active' : ''}" data-boq-tab="rates" style="display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; border-radius: 6px 6px 0 0; border: 1px solid ${this.activeTab === 'rates' ? '#f59e0b' : 'transparent'}; border-bottom: none; background: ${this.activeTab === 'rates' ? '#0f172a' : 'transparent'}; color: ${this.activeTab === 'rates' ? '#f59e0b' : '#94a3b8'}; cursor: pointer; white-space: nowrap; transition: all 0.15s;">
+            <span>💲</span> Rates
+          </button>
+
           <span style="display: inline-block; width: 1px; height: 20px; background: #334155; margin: auto 4px;"></span>
 
           ${(() => {
@@ -239,6 +251,9 @@ export class BoqAndDupaUI {
     }
     if (this.activeTab === 'bom') {
       return this.renderCostedBomTab(boqState);
+    }
+    if (this.activeTab === 'rates') {
+      return renderRatesTabImpl.call(this, boqState);
     }
     const item = boqState.items.find(it => it.itemNo === this.activeTab);
     if (item) {
