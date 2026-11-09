@@ -2,7 +2,7 @@
  * BOQ summary and costed bill-of-materials tabs.
  */
 import { ProjectStore } from '../../store/projectStore';
-import { extractCostedBom, getBoqProjectTotal } from '../../geo/boqCalculator';
+import { extractCostedBom, getBoqProjectTotal, getBoqSectionTotals, templateNoOf } from '../../geo/boqCalculator';
 import { escapeHtml } from '../../utils/html';
 import type { BoqAndDupaUI } from '../boqView';
 
@@ -37,8 +37,17 @@ export function renderBoqSummaryTab(this: BoqAndDupaUI, boqState: ReturnType<Pro
             <tr style="background: rgba(255,255,255,0.01); font-weight: bold; color: #38bdf8;">
               <td colspan="8" style="padding: 8px 12px;">Solar Works &amp; Balance of System (DPWH Standard Format)</td>
             </tr>
-            ${boqState.items.map(it => {
-              const itemColor = this.getItemColor(it.itemNo);
+            ${getBoqSectionTotals(boqState).map(group => {
+              const sec = group.sectionId ? this.store.sections.get(group.sectionId) : undefined;
+              const hasSections = boqState.items.some(i => i.sectionId);
+              const header = hasSections
+                ? `<tr style="background: rgba(255,255,255,0.03); font-weight: bold; color: #38bdf8;"><td colspan="8" style="padding: 8px 12px;">${sec ? `${escapeHtml(sec.code)} — ${escapeHtml(sec.name)}` : 'Other Systems'}</td></tr>`
+                : '';
+              const footer = hasSections
+                ? `<tr style="background: rgba(56, 189, 248, 0.05); font-weight: bold; border-bottom: 2px solid #334155;"><td colspan="6" style="padding: 8px 12px; text-align: right;">Subtotal${sec ? ` (${escapeHtml(sec.code)})` : ''}:</td><td style="padding: 8px 12px; text-align: right; color: #38bdf8; font-family: monospace;">₱${group.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td></td></tr>`
+                : '';
+              return header + group.items.map(it => {
+              const itemColor = this.getItemColor(templateNoOf(it));
               return `
                 <tr class="boq-summary-row" data-item-no="${it.itemNo}" style="border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.15s;">
                   <td style="padding: 10px 12px; font-weight: bold; color: ${itemColor};">
@@ -48,7 +57,7 @@ export function renderBoqSummaryTab(this: BoqAndDupaUI, boqState: ReturnType<Pro
                   <td style="padding: 10px 12px; font-weight: 500;">
                     <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                       <span style="color: #f8fafc;">${escapeHtml(it.description)}</span>
-                      ${it.itemNo === 'D12' ? `
+                      ${templateNoOf(it) === 'D12' ? `
                         <button class="btn btn-xs btn-outline btn-toggle-d12" style="padding: 1px 6px; font-size: 10px; border-radius: 4px; ${it.quantity > 0 ? 'border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1);' : 'border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,0.1);'}" title="Toggle between Optional (Excluded from Base BOQ) and Included">
                           ${it.quantity > 0 ? '✓ Included' : '+ Optional (Click to Include)'}
                         </button>
@@ -67,6 +76,7 @@ export function renderBoqSummaryTab(this: BoqAndDupaUI, boqState: ReturnType<Pro
                   </td>
                 </tr>
               `;
+            }).join('') + footer;
             }).join('')}
             <tr style="background: rgba(56, 189, 248, 0.05); border-top: 2px solid #334155; font-weight: bold;">
               <td colspan="6" style="padding: 12px; text-align: right; font-size: 13px;">Subtotal (Solar Works):</td>

@@ -15,11 +15,25 @@ export function getBoqState(this: ProjectStore, systemId?: string, forceRegenera
       }
       return acc;
     }, 0);
-    const d2 = this.boqState.items?.find(it => it.itemNo === 'D2');
-    const hasTableInD2 = d2?.materials?.some(
+    const d2Items = (this.boqState.items || []).filter(it => (it.templateNo ?? it.itemNo) === 'D2');
+    const hasTableInD2 = d2Items.some(d2 => d2.materials?.some(
       m => m.autoSourceKey === 'd2_ground_table_racking' || m.description.toLowerCase().includes('table')
-    );
+    ));
     if (groundTablesInCad > 0 && !hasTableInD2) {
+      needsRefresh = true;
+    }
+
+    // Farm sections added/removed since the BOQ was built: regenerate (user rates are preserved)
+    const farmsWithArrays = [...this.sections.values()]
+      .filter(s => (s.kind === 'farm' && s.systemIds.some(id => this.systems.get(id)?.zoneIds.length)) ||
+                   (s.kind === 'interconnection' && !!s.interconnection))
+      .map(s => s.id)
+      .sort()
+      .join(',');
+    const boqFarms = [...new Set(this.boqState.items.map(it => it.sectionId).filter(Boolean))].sort().join(',');
+    // (a system-filtered BOQ intentionally holds only that system's farm)
+    const unfiltered = !systemId || systemId === 'all';
+    if (unfiltered && farmsWithArrays !== boqFarms) {
       needsRefresh = true;
     }
   }

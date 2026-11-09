@@ -21,7 +21,11 @@ import {
   DupaWorkItem,
   CustomSolarResource,
   FacilityLoadProfile,
-  LoadProfileArchetype
+  LoadProfileArchetype,
+  ProjectSection,
+  Building,
+  BessConfig,
+  InterconnectionConfig
 } from '../types/solar';
 import { SolarYieldResult } from '../geo/solarYield';
 import { scaleAnnualLoad } from '../geo/loadProfile';
@@ -80,6 +84,7 @@ import { setMatchPropsMode as setMatchPropsModeImpl, toggleXRayMode as toggleXRa
 import { updateKeepOutVertices as updateKeepOutVerticesImpl, addKeepOutVertex as addKeepOutVertexImpl, deleteKeepOutVertex as deleteKeepOutVertexImpl, addKeepOut as addKeepOutImpl, removeKeepOut as removeKeepOutImpl, deleteKeepOut as deleteKeepOutImpl, reassignKeepOutZone as reassignKeepOutZoneImpl, updateKeepOutName as updateKeepOutNameImpl, getAllKeepOuts as getAllKeepOutsImpl } from './keepOutActions';
 import { getPanelsForSystem as getPanelsForSystemImpl, togglePanelActive as togglePanelActiveImpl, removePanel as removePanelImpl, updatePanelString as updatePanelStringImpl, updateStringAssignment as updateStringAssignmentImpl } from './panelActions';
 import { getSystemSummary as getSystemSummaryImpl, getSolarYieldEstimate as getSolarYieldEstimateImpl, setCustomSolarResource as setCustomSolarResourceImpl, getLoadProfile as getLoadProfileImpl, ensureLoadProfile as ensureLoadProfileImpl, applyLoadArchetype as applyLoadArchetypeImpl, updateMonthlyLoad as updateMonthlyLoadImpl, getSimulationResult as getSimulationResultImpl } from './energyActions';
+import { setFarmBess as setFarmBessImpl, setInterconnection as setInterconnectionImpl, addSection as addSectionImpl, addPoultryHouses as addPoultryHousesImpl, detachZoneFromBuildings as detachZoneFromBuildingsImpl, AddPoultryHousesOptions } from './buildingActions';
 import { getBoqState as getBoqStateImpl, syncBoqFromCad as syncBoqFromCadImpl, updateBoqMarkups as updateBoqMarkupsImpl, updateDupaWorkItem as updateDupaWorkItemImpl, toggleLightningProtection as toggleLightningProtectionImpl } from './boqActions';
 
 export type DrawingMode = 'none' | 'zone' | 'keepout' | 'inverter' | 'raceway' | 'ac_interconnection' | 'ac_raceway' | 'match_props';
@@ -132,6 +137,8 @@ export class ProjectStore {
   modules: Map<string, ModuleModel> = new Map();
   systems: Map<string, SolarSystem> = new Map();
   zones: Map<string, ArrayZone> = new Map();
+  sections: Map<string, ProjectSection> = new Map();
+  buildings: Map<string, Building> = new Map();
   panels: Map<string, SolarPanelObject> = new Map();
   boqState: ProjectBoqState | null = null;
 
@@ -749,7 +756,24 @@ export class ProjectStore {
     this.notify();
   }
 
+  public addSection(kind: ProjectSection['kind'] = 'farm', name?: string): ProjectSection {
+    return addSectionImpl.call(this, kind, name);
+  }
+
+  public setFarmBess(sectionId: string, bess: BessConfig | null): void {
+    setFarmBessImpl.call(this, sectionId, bess);
+  }
+
+  public setInterconnection(cfg: InterconnectionConfig | null): ProjectSection | undefined {
+    return setInterconnectionImpl.call(this, cfg);
+  }
+
+  public addPoultryHouses(opts: AddPoultryHousesOptions): Building[] {
+    return addPoultryHousesImpl.call(this, opts);
+  }
+
   public removeZone(zoneId: string): void {
+    detachZoneFromBuildingsImpl.call(this, zoneId);
     const zone = this.zones.get(zoneId);
     if (zone && zone.systemId) {
       const sys = this.systems.get(zone.systemId);
@@ -894,6 +918,8 @@ export class ProjectStore {
     this.systems.clear();
     this.zones.clear();
     this.panels.clear();
+    this.sections.clear();
+    this.buildings.clear();
     this.ensureDefaultModules();
     this.ensureDefaultSystem();
     this.selectedZoneId = null;

@@ -17,19 +17,26 @@ import {
 
 export function buildBoqContext(
   store: ProjectStore,
-  systemId?: string,
+  systemIdOrIds?: string | string[],
   existingBoq?: ProjectBoqState
 ) {
-  const isAll = !systemId || systemId === 'all';
+  // A single id, 'all'/undefined for the whole project, or a list of ids (one farm's systems)
+  const idSet: Set<string> | null = Array.isArray(systemIdOrIds)
+    ? new Set(systemIdOrIds)
+    : systemIdOrIds && systemIdOrIds !== 'all'
+      ? new Set([systemIdOrIds])
+      : null;
+  const isAll = idSet === null;
+  const systemId = Array.isArray(systemIdOrIds) ? undefined : systemIdOrIds;
   const allSystems = store.getSystems();
-  const systems = isAll ? allSystems : allSystems.filter(s => s.id === systemId);
+  const systems = idSet ? allSystems.filter(s => idSet.has(s.id)) : allSystems;
 
-  const allPanels = isAll ? store.getPanels() : store.getPanelsForSystem(systemId);
+  const allPanels = idSet ? store.getPanels().filter(p => idSet.has(p.systemId)) : store.getPanels();
   const activePanels = allPanels.filter(p => p.active);
   const totalPanelsCount = activePanels.length;
 
   const allZones = store.getZones();
-  const zones = isAll ? allZones : allZones.filter(z => z.systemId === systemId);
+  const zones = idSet ? allZones.filter(z => idSet.has(z.systemId)) : allZones;
 
   // Existing custom rates lookup map: autoSourceKey -> unitCostPhp / ratePerDayPhp
   const existingMaterialRates = new Map<string, number>();
@@ -145,7 +152,9 @@ export function buildBoqContext(
   const aluminumRailPcs = Math.max(1, Math.ceil(totalRailSpanM / 4.2));
 
   // String & Cabling Aggregation
-  const rawStringCables = store.getStringCables(isAll ? 'all' : systemId);
+  const rawStringCables = idSet
+    ? store.getStringCables('all').filter(c => idSet.has(c.systemId))
+    : store.getStringCables('all');
   const totalStrings = rawStringCables.length;
   let totalIntraStringM = 0;
   let totalHomerunM = 0;

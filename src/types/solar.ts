@@ -344,7 +344,9 @@ export interface DupaEquipmentRow {
 }
 
 export interface DupaWorkItem {
-  itemNo: string;          // 'D1' .. 'D9'
+  itemNo: string;          // 'D1' .. 'D13' (single-site) or '<farm code><n>' e.g. 'A1' (multi-farm)
+  sectionId?: string;      // Owning farm section (multi-farm projects)
+  templateNo?: string;     // Work-item template id 'D1' .. 'D13' when itemNo is farm-prefixed
   category: string;        // 'Solar Works'
   description: string;     // Work Description
   durationDays: number;    // Activity duration in days
@@ -424,6 +426,55 @@ export interface FacilityLoadProfile {
   updatedAt: string;
 }
 
+export type SectionKind = 'farm' | 'interconnection';
+
+export type BessChemistry = 'LFP' | 'NMC';
+
+/** Battery energy storage installed at a farm. */
+export interface BessConfig {
+  capacityMwh: number;
+  powerMw: number;
+  chemistry: BessChemistry;
+}
+
+/** Utility interconnection package: primary line upgrade plus switching / metering. */
+export interface InterconnectionConfig {
+  lineLengthKm: number;   // Primary (13.2 kV) line to upgrade
+  poleSpanM: number;      // Average span between poles
+  voltageKv: number;
+}
+
+/** Top-level BOQ grouping: a farm (A, B, ...) or the interconnection package (I). */
+export interface ProjectSection {
+  id: string;
+  bess?: BessConfig | null;                    // Farm sections only
+  interconnection?: InterconnectionConfig | null; // Interconnection section only
+  code: string;        // 'A', 'B', ... 'I' - prefix for BOQ item numbers
+  name: string;
+  kind: SectionKind;
+  systemIds: string[]; // Solar systems that belong to this section
+}
+
+export type RoofType = 'corrugated_metal' | 'standing_seam' | 'sandwich_panel';
+export type CorrosionClass = 'standard' | 'ammonia_humid';
+
+/** A poultry house (tunnel-vent building) whose roof planes carry PV array zones. */
+export interface Building {
+  id: string;
+  sectionId: string;
+  name: string;
+  footprint: LatLngPoint[];  // Building outline (4 corners)
+  headingDeg: number;        // Bearing of the long axis / ridge line (0 = north)
+  lengthM: number;
+  widthM: number;
+  eaveHeightM: number;
+  ridgeHeightM: number;
+  roofType: RoofType;
+  purlinSpacingM: number;
+  corrosionClass: CorrosionClass;
+  zoneIds: string[];         // Roof-plane array zones (2 for a gable)
+}
+
 export interface ProjectData {
   version: string;
   projectName: string;
@@ -442,6 +493,8 @@ export interface ProjectData {
   boqData?: ProjectBoqState;
   customSolarResource?: CustomSolarResource | null;
   loadProfile?: FacilityLoadProfile | null;
+  sections?: ProjectSection[];
+  buildings?: Building[];
 }
 
 // Datasheet Default: ZNShine 600W Bifacial (https://energiasirius.com/wp-content/uploads/2025/01/Datasheet-ZN-SHine-600W-Bifacial.pdf)
@@ -634,6 +687,22 @@ export const GENERIC_INVERTER_PRESETS: InverterConfig[] = [
     phase: 'single_phase',
     acVoltage: 230,
     gridFrequencyHz: 50
+  },
+  {
+    id: 'inv_hybrid_125k',
+    modelName: '125 kW Hybrid Inverter (Bi-directional, 800V AC, 3Φ)',
+    ratedAcPowerKw: 125,
+    inverterCount: 1,
+    mpptCountPerInverter: 12,
+    maxStringsPerMppt: 2,
+    maxDcVoltage: 1500,
+    minMpptVoltage: 500,
+    maxMpptVoltage: 1500,
+    maxDcCurrentPerMppt: 32,
+    maxDcAcRatio: 1.5,
+    phase: 'three_phase',
+    acVoltage: 800,
+    gridFrequencyHz: 60
   },
   {
     id: 'inv_utility_250k',

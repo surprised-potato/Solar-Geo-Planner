@@ -82,7 +82,7 @@ export function attachEventListeners(this: BoqAndDupaUI): void {
   // 8. Export BOQ & DUPA CSV
   this.container.querySelector('#boq-btn-export-csv')?.addEventListener('click', () => {
     const boq = this.store.getBoqState(this.currentSystemId);
-    const csv = exportBoqAndDupaCsv(this.store.projectName, boq);
+    const csv = exportBoqAndDupaCsv(this.store.projectName, boq, this.store.sections);
     downloadCsv(csv, `${safeFileName(this.store.projectName)}_BOQ_and_DUPA_${Date.now()}.csv`);
   });
 

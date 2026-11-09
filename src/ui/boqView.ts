@@ -1,5 +1,5 @@
 import { ProjectStore } from '../store/projectStore';
-import { getBoqProjectTotal } from '../geo/boqCalculator';
+import { getBoqProjectTotal, templateNoOf } from '../geo/boqCalculator';
 import { DupaWorkItem } from '../types/solar';
 import { escapeHtml } from '../utils/html';
 import { renderBoqSummaryTab as renderBoqSummaryTabImpl, renderCostedBomTab as renderCostedBomTabImpl } from './boq/summaryTabs';
@@ -62,7 +62,10 @@ export class BoqAndDupaUI {
       D10: 'Main Dist. Panel (MDP)',
       D11: 'AC Feeder Runs',
       D12: 'Grounding & LP',
-      D13: 'Testing & Handover'
+      D13: 'Testing & Handover',
+      E1: 'Battery Storage (BESS)',
+      I1: 'Primary Line',
+      I2: 'Switching & Metering'
     };
     return titles[itemNo] || itemNo;
   }
@@ -81,7 +84,10 @@ export class BoqAndDupaUI {
       D10: '#3b82f6',
       D11: '#14b8a6',
       D12: '#eab308',
-      D13: '#22c55e'
+      D13: '#22c55e',
+      E1: '#f43f5e',
+      I1: '#fb923c',
+      I2: '#2dd4bf'
     };
     return colors[itemNo] || '#38bdf8';
   }
@@ -188,16 +194,26 @@ export class BoqAndDupaUI {
 
           <span style="display: inline-block; width: 1px; height: 20px; background: #334155; margin: auto 4px;"></span>
 
-          ${boqState.items.map(it => {
+          ${(() => {
+            // With several farms only show the DUPA tabs of the farm that is currently open
+            const activeItem = boqState.items.find(i => i.itemNo === this.activeTab);
+            const hasFarms = boqState.items.some(i => i.sectionId);
+            const farmId = hasFarms ? (activeItem ? activeItem.sectionId : boqState.items.find(i => i.sectionId)?.sectionId) : undefined;
+            const farm = farmId ? this.store.sections.get(farmId) : undefined;
+            const label = farm
+              ? `<span style="align-self: center; font-size: 11px; color: #94a3b8; padding: 0 6px; white-space: nowrap;">${escapeHtml(farm.code)} — ${escapeHtml(farm.name)}</span>`
+              : '';
+            return label + boqState.items.filter(it => !hasFarms || it.sectionId === farmId).map(it => {
             const isTabActive = this.activeTab === it.itemNo;
-            const itemColor = this.getItemColor(it.itemNo);
+            const itemColor = this.getItemColor(templateNoOf(it));
             return `
               <button class="boq-tab-btn ${isTabActive ? 'active' : ''}" data-boq-tab="${it.itemNo}" title="${escapeHtml(it.description)}" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 11px; font-weight: 500; border-radius: 6px 6px 0 0; border: 1px solid ${isTabActive ? itemColor : 'transparent'}; border-bottom: none; background: ${isTabActive ? '#0f172a' : 'transparent'}; color: ${isTabActive ? '#fff' : '#94a3b8'}; cursor: pointer; white-space: nowrap; transition: all 0.15s;">
                 <span class="badge" style="font-size: 10px; padding: 1px 5px; background: ${itemColor}; color: #000; font-weight: bold; border-radius: 3px;">${it.itemNo}</span>
-                <span>${this.getItemShortTitle(it.itemNo)}</span>
+                <span>${this.getItemShortTitle(templateNoOf(it))}</span>
               </button>
             `;
-          }).join('')}
+          }).join('');
+          })()}
         </nav>
 
         <!-- ACTIVE TAB CONTENT BODY -->

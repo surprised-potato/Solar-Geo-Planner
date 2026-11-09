@@ -3,13 +3,14 @@
  */
 import { DupaWorkItem } from '../../types/solar';
 import { escapeHtml } from '../../utils/html';
+import { templateNoOf } from '../../geo/boqCalculator';
 import type { BoqAndDupaUI } from '../boqView';
 
 // ========================================================
 // TAB 3-11: DEDICATED DUPA WORK ITEM SHEET
 // ========================================================
 export function renderDedicatedDupaTab(this: BoqAndDupaUI, it: DupaWorkItem, allItems: DupaWorkItem[]): string {
-  const itemColor = this.getItemColor(it.itemNo);
+  const itemColor = this.getItemColor(templateNoOf(it));
   const currIdx = allItems.findIndex(x => x.itemNo === it.itemNo);
   const prevItem = currIdx > 0 ? allItems[currIdx - 1] : null;
   const nextItem = currIdx >= 0 && currIdx < allItems.length - 1 ? allItems[currIdx + 1] : null;
@@ -17,7 +18,7 @@ export function renderDedicatedDupaTab(this: BoqAndDupaUI, it: DupaWorkItem, all
   return `
     <div class="dupa-dedicated-sheet" style="display: flex; flex-direction: column; gap: 14px;">
       
-      ${it.itemNo === 'D12' ? `
+      ${templateNoOf(it) === 'D12' ? `
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 8px; background: ${it.quantity > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)'}; border: 1px solid ${it.quantity > 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'};">
           <div>
             <strong style="color: ${it.quantity > 0 ? '#10b981' : '#f59e0b'}; display: flex; align-items: center; gap: 6px; font-size: 13px;">

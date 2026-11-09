@@ -11,6 +11,8 @@ import { attachKeepOutsTableListeners } from './keepOutsTable';
 import { attachRacewaysTableListeners } from './racewaysTable';
 import { attachSystemsTableListeners } from './systemsTable';
 import { attachArraysTableListeners } from './arraysTable';
+import { attachBuildingsTableListeners } from './buildingsTable';
+import { attachEquipmentTableListeners } from './equipmentTable';
 
 export function attachModalListeners(this: RegistryModalUI): void {
   if (this.activeTab === 'sld') {
@@ -91,6 +93,8 @@ export function attachModalListeners(this: RegistryModalUI): void {
     });
   });
 
+  attachBuildingsTableListeners.call(this);
+  attachEquipmentTableListeners.call(this);
   attachArraysTableListeners.call(this);
   attachSystemsTableListeners.call(this);
   attachRacewaysTableListeners.call(this);

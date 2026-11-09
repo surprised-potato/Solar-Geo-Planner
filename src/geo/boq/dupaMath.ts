@@ -178,3 +178,35 @@ export function getBoqProjectTotal(boq: ProjectBoqState): {
     totalVat: Number(totalVat.toFixed(2))
   };
 }
+
+/** Work-item template id ('D1'..'D13') regardless of farm prefix. */
+export function templateNoOf(item: DupaWorkItem): string {
+  return item.templateNo ?? item.itemNo;
+}
+
+export interface BoqSectionTotal {
+  sectionId: string | undefined;
+  items: DupaWorkItem[];
+  directCost: number;
+  total: number;
+}
+
+/** Groups work items by section (in first-seen order) with per-section direct cost and total. */
+export function getBoqSectionTotals(boq: ProjectBoqState): BoqSectionTotal[] {
+  const groups = new Map<string | undefined, BoqSectionTotal>();
+  for (const item of boq.items) {
+    let g = groups.get(item.sectionId);
+    if (!g) {
+      g = { sectionId: item.sectionId, items: [], directCost: 0, total: 0 };
+      groups.set(item.sectionId, g);
+    }
+    g.items.push(item);
+    g.directCost += item.estimatedDirectCostPhp;
+    g.total += item.totalItemCostPhp;
+  }
+  return [...groups.values()].map(g => ({
+    ...g,
+    directCost: Number(g.directCost.toFixed(2)),
+    total: Number(g.total.toFixed(2))
+  }));
+}
