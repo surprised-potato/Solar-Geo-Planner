@@ -10,6 +10,9 @@ import {
 import type { MapController } from '../mapController';
 import { escapeHtml } from '../../utils/html';
 
+/** Pointer travel (px) before a handle press counts as a drag rather than a click. */
+const DRAG_THRESHOLD_PX = 3;
+
 export function renderVertexHandles(this: MapController): void {
   this.vertexMarkersGroup.clearLayers();
   if (this.store.viewFilter.showVertices === false) return;
@@ -46,7 +49,14 @@ export function renderVertexHandles(this: MapController): void {
       lastMoveLatLng = { lat: vertex.lat, lng: vertex.lng };
       this.map.dragging.disable();
 
+      // A plain click (or the clicks of a double-click delete) must not re-run the
+      // expensive layout optimisation or rebuild the handles: only commit real drags.
+      const startPt = e.containerPoint;
+      let moved = false;
+
       const onMouseMove = (moveEv: L.LeafletMouseEvent) => {
+        if (!moved && moveEv.containerPoint.distanceTo(startPt) < DRAG_THRESHOLD_PX) return;
+        moved = true;
         marker.setLatLng(moveEv.latlng);
         lastMoveLatLng = { lat: moveEv.latlng.lat, lng: moveEv.latlng.lng };
 
@@ -72,6 +82,7 @@ export function renderVertexHandles(this: MapController): void {
         this.map.dragging.enable();
         this.map.off('mousemove', onMouseMove);
         this.map.off('mouseup', onMouseUp);
+        if (!moved) return;
 
         const currentZone = this.store.getZone(selectedZone.id);
         if (currentZone) {
@@ -167,7 +178,12 @@ export function renderVertexHandles(this: MapController): void {
         lastKoLatLng = { lat: koVertex.lat, lng: koVertex.lng };
         this.map.dragging.disable();
 
+        const startPt = e.containerPoint;
+        let moved = false;
+
         const onMouseMove = (moveEv: L.LeafletMouseEvent) => {
+          if (!moved && moveEv.containerPoint.distanceTo(startPt) < DRAG_THRESHOLD_PX) return;
+          moved = true;
           koMarker.setLatLng(moveEv.latlng);
           lastKoLatLng = { lat: moveEv.latlng.lat, lng: moveEv.latlng.lng };
 
@@ -194,6 +210,7 @@ export function renderVertexHandles(this: MapController): void {
           this.map.dragging.enable();
           this.map.off('mousemove', onMouseMove);
           this.map.off('mouseup', onMouseUp);
+          if (!moved) return;
 
           const currentZone = this.store.getZone(selectedZone.id);
           if (currentZone) {
