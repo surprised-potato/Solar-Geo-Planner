@@ -1,0 +1,32 @@
+/* ========================================================
+   Construction Management BOQ, DUPA & Costed BOM Workspace
+   ======================================================== */
+.boq-workspace-container {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background-color: #0b1329;
+}
+
+.boq-workspace-mount {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.boq-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #f8fafc !important;
+}
+
+.boq-summary-row:hover {
+  background: rgba(56, 189, 248, 0.06) !important;
+}
+
+.boq-scope-mode {
+  border-bottom-color: rgba(16, 185, 129, 0.3) !important;
+}

@@ -1,6 +1,7 @@
 import { ProjectStore } from '../store/projectStore';
-import { FirebaseSyncService, SyncStatus, CloudProjectSummary } from '../services/firebaseSync';
+import { FirebaseSyncService, SyncStatus, CloudProjectSummary, CloudUser } from '../services/firebaseSync';
 import { MapController } from '../map/mapController';
+import { escapeHtml } from '../utils/html';
 
 export class ProjectDropdownUI {
   private store: ProjectStore;
@@ -17,6 +18,9 @@ export class ProjectDropdownUI {
   private btnNewProject: HTMLElement | null = null;
   private btnRenameProject: HTMLElement | null = null;
   private btnDeleteProject: HTMLElement | null = null;
+  private btnShareProject: HTMLButtonElement | null = null;
+  private btnAuth: HTMLButtonElement | null = null;
+  private currentUser: CloudUser | null = null;
 
   constructor(store: ProjectStore, syncService: FirebaseSyncService, mapController?: MapController) {
     this.store = store;
@@ -38,6 +42,8 @@ export class ProjectDropdownUI {
     this.btnNewProject = document.getElementById('btn-dropdown-new-project');
     this.btnRenameProject = document.getElementById('btn-dropdown-rename-project');
     this.btnDeleteProject = document.getElementById('btn-dropdown-delete-project');
+    this.btnShareProject = document.getElementById('btn-dropdown-share-project') as HTMLButtonElement | null;
+    this.btnAuth = document.getElementById('btn-cloud-auth') as HTMLButtonElement | null;
   }
 
   private setupListeners(): void {
@@ -46,10 +52,55 @@ export class ProjectDropdownUI {
       this.updateSyncStatusUI(status);
     });
 
+    // Signed-in account
+    this.syncService.onAuthChange(user => {
+      this.currentUser = user;
+      this.updateAuthUI();
+      this.renderProjectsList(this.syncService.getAvailableProjects());
+    });
+
+    this.btnAuth?.addEventListener('click', async () => {
+      try {
+        if (this.currentUser) {
+          if (confirm(`Sign out ${this.currentUser.email ?? ''}? Cloud sync stops; your current project stays on this device.`)) {
+            await this.syncService.signOut();
+          }
+        } else {
+          await this.syncService.signIn();
+        }
+      } catch (err: any) {
+        if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+          alert('Sign-in failed: ' + (err.message || err));
+        }
+      }
+    });
+
     // Available projects list updates
     this.syncService.onProjectsListChange(projects => {
       this.renderProjectsList(projects);
       this.updateCurrentName();
+      this.updateOwnerActions();
+    });
+
+    // Share project action (owner only)
+    this.btnShareProject?.addEventListener('click', async () => {
+      this.closeDropdown();
+      if (!this.syncService.canManageActiveProject()) {
+        alert('Only the project owner can change sharing.');
+        return;
+      }
+      const current = this.syncService.getActiveProjectMembers().join(', ');
+      const input = prompt(
+        'Share this project with Google accounts (comma-separated emails).\nThey can view and edit it; only you can delete it or change sharing. Leave empty to stop sharing.',
+        current
+      );
+      if (input === null) return;
+      try {
+        const members = await this.syncService.setActiveProjectMembers(input.split(/[,;\s]+/));
+        alert(members.length ? `Shared with: ${members.join(', ')}` : 'Project is now private.');
+      } catch (err: any) {
+        alert('Could not update sharing: ' + (err.message || err));
+      }
     });
 
     // Store updates (e.g. project name changed)
@@ -144,7 +195,35 @@ export class ProjectDropdownUI {
         this.syncLabel.textContent = '⚠️ Sync Error';
         this.syncPill.title = 'Cloud sync encountered an issue. Changes saved locally.';
         break;
+      case 'signed-out':
+        this.syncLabel.textContent = '💾 Local only';
+        this.syncPill.title = 'Not signed in. Changes are saved on this device only. Sign in with Google to sync.';
+        break;
     }
+  }
+
+  private updateAuthUI(): void {
+    if (this.btnAuth) {
+      if (this.currentUser) {
+        this.btnAuth.textContent = `Sign out (${this.currentUser.email ?? this.currentUser.displayName ?? 'account'})`;
+        this.btnAuth.title = 'Signed in with Google. Click to sign out.';
+      } else {
+        this.btnAuth.textContent = 'Sign in with Google';
+        this.btnAuth.title = 'Sign in with Google to sync projects across devices';
+      }
+    }
+    const signedIn = !!this.currentUser;
+    for (const btn of [this.btnNewProject, this.btnShareProject, this.btnDeleteProject]) {
+      if (btn) (btn as HTMLButtonElement).disabled = !signedIn;
+    }
+    this.updateOwnerActions();
+  }
+
+  /** Sharing and deletion are owner-only (also enforced by Firestore rules). */
+  private updateOwnerActions(): void {
+    const canManage = !!this.currentUser && this.syncService.canManageActiveProject();
+    if (this.btnShareProject) this.btnShareProject.disabled = !canManage;
+    if (this.btnDeleteProject) (this.btnDeleteProject as HTMLButtonElement).disabled = !canManage;
   }
 
   private updateCurrentName(): void {
@@ -158,9 +237,12 @@ export class ProjectDropdownUI {
     const activeId = this.syncService.getActiveProjectId();
 
     if (projects.length === 0) {
+      const message = this.currentUser
+        ? 'No other projects found.'
+        : 'Sign in with Google to sync and share projects. Until then, work is saved on this device only.';
       this.listEl.innerHTML = `
         <div style="padding: 10px 12px; font-size: 11px; color: var(--text-dim); text-align: center;">
-          No other projects found.
+          ${message}
         </div>
       `;
       return;
@@ -175,13 +257,13 @@ export class ProjectDropdownUI {
         minute: '2-digit'
       });
       return `
-        <button class="project-dropdown-item ${isActive ? 'active' : ''}" data-project-id="${p.id}">
+        <button class="project-dropdown-item ${isActive ? 'active' : ''}" data-project-id="${escapeHtml(p.id)}">
           <div style="overflow: hidden; text-overflow: ellipsis;">
             <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${isActive ? '✓ ' : ''}${this.escapeHtml(p.name)}
+              ${isActive ? '✓ ' : ''}${escapeHtml(p.name)}
             </div>
             <div class="project-item-meta">
-              ${p.zoneCount || 0} ${(p.zoneCount === 1 ? 'array' : 'arrays')} • ${(p.totalKwp || 0).toFixed(1)} kWp • ${formattedDate}
+              ${p.isOwner ? '' : '👥 Shared • '}${p.zoneCount || 0} ${(p.zoneCount === 1 ? 'array' : 'arrays')} • ${(p.totalKwp || 0).toFixed(1)} kWp • ${escapeHtml(formattedDate)}
             </div>
           </div>
         </button>
@@ -201,11 +283,5 @@ export class ProjectDropdownUI {
         }
       });
     });
-  }
-
-  private escapeHtml(str: string): string {
-    const div = document.createElement('div');
-    div.innerText = str;
-    return div.innerHTML;
   }
 }

@@ -23,6 +23,10 @@
           <span id="cloud-sync-label">☁️ Syncing...</span>
         </div>
 
+        <button id="btn-cloud-auth" class="btn-cloud-auth" type="button" title="Sign in with Google to sync projects">
+          Sign in with Google
+        </button>
+
         <div class="project-dropdown-container">
           <button id="btn-project-dropdown" class="btn-project-select" title="Switch or manage cloud-synchronized projects">
             <span class="icon">📁</span>
@@ -38,6 +42,9 @@
             </button>
             <button id="btn-dropdown-rename-project" class="dropdown-action-btn">
               <span>✏️</span> Rename Project
+            </button>
+            <button id="btn-dropdown-share-project" class="dropdown-action-btn">
+              <span>👥</span> Share Project…
             </button>
             <button id="btn-dropdown-delete-project" class="dropdown-action-btn danger">
               <span>🗑️</span> Delete Project
@@ -59,7 +66,7 @@
         <div id="search-results" class="search-results-dropdown"></div>
       </div>
 
-      <!-- Main View Tabs (Map View vs Single Line Diagram vs BOQ & Costing) -->
+      <!-- Main View Tabs (Map View vs Single Line Diagram vs BOQ & Costing vs Energy Simulation) -->
       <nav class="header-view-tabs" role="tablist" aria-label="Main Application Views">
         <button id="btn-view-map" class="btn-view-tab active" data-view="map" role="tab" aria-selected="true" title="Switch to Satellite Map CAD View">
           <span class="icon">🗺️</span> Map View
@@ -70,77 +77,20 @@
         <button id="btn-view-boq" class="btn-view-tab" data-view="boq" role="tab" aria-selected="false" title="Switch to Construction Management BOQ, DUPA & Costed BOM Costing View">
           <span class="icon">💰</span> BOQ &amp; Costing
         </button>
+        <button id="btn-view-simulation" class="btn-view-tab" data-view="simulation" role="tab" aria-selected="false" title="Switch to Solar &amp; Load Simulation, Diurnal Dispatch, RE Share &amp; Energy Balance Workspace">
+          <span class="icon">📈</span> Energy Simulation
+        </button>
       </nav>
 
-      <!-- Consolidated CAD Quick Action Buttons -->
-      <div class="header-actions">
-        <!-- Consolidated CAD Draw Menu -->
-        <div class="cad-draw-dropdown-group" id="cad-draw-dropdown-group">
-          <button id="btn-hdr-draw-menu" class="btn btn-primary dropdown-toggle" aria-haspopup="true" aria-expanded="false" title="CAD Drawing Tools: Draw Arrays, Keep-Outs, Homeruns, or Place Inverters">
-            <span class="icon" id="hdr-draw-menu-icon">📐</span>
-            <span id="hdr-draw-menu-label">Draw Array</span>
-            <span class="dropdown-caret">▾</span>
-          </button>
-          <div class="cad-draw-popover-menu" id="cad-draw-popover-menu" role="menu" hidden>
-            <div class="dropdown-section-title">ARRAY BOUNDARIES</div>
-            <button id="btn-hdr-draw-roof" class="dropdown-item" role="menuitem" title="Draw rooftop array polygon">
-              <span class="icon">🏠</span>
-              <div class="dropdown-item-info">
-                <strong>Roof Array</strong>
-                <small>Flush / pitched rooftop solar layout</small>
-              </div>
-            </button>
-            <button id="btn-hdr-draw-ground" class="dropdown-item" role="menuitem" title="Draw ground mount array polygon">
-              <span class="icon">🌱</span>
-              <div class="dropdown-item-info">
-                <strong>Ground Array</strong>
-                <small>Racked / tilted ground solar field</small>
-              </div>
-            </button>
-            <div class="dropdown-divider"></div>
-            <div class="dropdown-section-title">ELECTRICAL & OBSTACLES</div>
-            <button id="btn-hdr-draw-keepout" class="dropdown-item" role="menuitem" title="Draw obstacle / keep-out exclusion zone">
-              <span class="icon">🚫</span>
-              <div class="dropdown-item-info">
-                <strong>Keep-Out Obstacle</strong>
-                <small>HVAC, skylights, vents, setbacks</small>
-              </div>
-            </button>
-            <button id="btn-hdr-draw-homerun" class="dropdown-item" role="menuitem" title="Draw shared homerun raceway trunk">
-              <span class="icon">🛤️</span>
-              <div class="dropdown-item-info">
-                <strong>Shared Homerun Trunk</strong>
-                <small>Conduit path connecting arrays to inverter</small>
-              </div>
-            </button>
-            <button id="btn-hdr-draw-inverter" class="dropdown-item" role="menuitem" title="Place inverter powerhouse on map">
-              <span class="icon">⚡</span>
-              <div class="dropdown-item-info">
-                <strong>Inverter Power House</strong>
-                <small>Click map to place or relocate power station</small>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <button id="btn-toggle-labels" class="btn btn-secondary" title="Toggle satellite street/place labels">
-          🏷️ Labels
-        </button>
-        <button id="btn-open-tables" class="btn btn-secondary" title="View Arrays, Systems, Raceways & Panels in Table View">
-          📊 Table View
-        </button>
-        <button id="btn-open-boq" class="btn btn-secondary" style="color: #10b981; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); font-weight: 600;" title="View Bill of Quantities (BOQ) & Detailed Unit Price Analysis (DUPA) Costing">
-          💰 BOQ &amp; DUPA
-        </button>
-        <button id="btn-open-registry" class="btn btn-secondary" title="View tracked solar panel objects" style="display: none;">
-          📋 Panel Registry
-        </button>
-        <button id="btn-export-json" class="btn btn-outline" title="Export Project JSON">
-          💾 Export
-        </button>
-        <button id="btn-import-json" class="btn btn-outline" title="Import Project JSON">
-          📂 Import
-        </button>
+      <!-- Hidden compatibility container for legacy actions and file input -->
+      <div id="hidden-app-actions" style="display: none;" aria-hidden="true">
+        <button id="btn-open-tables"></button>
+        <button id="btn-open-registry"></button>
+        <button id="btn-open-pdf-report"></button>
+        <button id="btn-open-boq"></button>
+        <button id="btn-toggle-labels"></button>
+        <button id="btn-export-json"></button>
+        <button id="btn-import-json"></button>
         <input type="file" id="file-import-input" accept=".json,.geojson" style="display: none;" />
       </div>
     </header>
@@ -171,7 +121,6 @@
             <select id="select-basemap" class="view-filter-select" title="Switch high-res satellite / map layer">
               <option value="google-hybrid" selected>Google Satellite HD</option>
               <option value="google-satellite">Google Sat (No Labels)</option>
-              <option value="esri">Esri Satellite</option>
               <option value="osm">OpenStreetMap</option>
               <option value="carto-light">Vicinity Map (Monochrome Light)</option>
               <option value="carto-dark">Blueprint Wireframe (Dark)</option>
@@ -252,6 +201,11 @@
       <section id="boq-workspace" class="boq-workspace-container" style="display: none;">
         <div id="boq-workspace-mount" class="boq-workspace-mount"></div>
       </section>
+
+      <!-- Center: Energy Simulation, Diurnal Dispatch & RE Share Workspace -->
+      <section id="simulation-workspace" class="simulation-workspace-container" style="display: none;">
+        <div id="simulation-workspace-mount" class="simulation-workspace-mount"></div>
+      </section>
     </main>
 
     <!-- Solar Panel Object Registry Modal Dialog conforming to modern web guidance -->
@@ -273,7 +227,16 @@
         </div>
       </div>
     </dialog>
+
+    <!-- Match Array Properties (MATCHPROP) Modal Dialog -->
+    <dialog id="matchPropsModal" class="modal-dialog match-props-modal" closedby="any" aria-labelledby="matchPropsTitle">
+      <!-- Populated dynamically by MatchPropsModalUI -->
+    </dialog>
+
   </div>
+
+  <!-- Engineering PDF Report Export & Live Document Preview Modal -->
+  <div id="pdf-report-modal" class="custom-modal-backdrop" style="display: none;"></div>
 
   <script type="module" src="./src/main.ts"></script>
 </body>

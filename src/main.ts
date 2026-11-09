@@ -9,6 +9,8 @@ import { localMetricToLatLng } from './geo/projection';
 import { BasemapProvider } from './types/solar';
 import { SingleLineDiagramUI } from './ui/sldView';
 import { BoqAndDupaUI } from './ui/boqView';
+import { SimulationWorkspaceUI } from './ui/simulationView';
+import { PdfReportModalUI } from './ui/pdfReportModal';
 
 // Initialize core store
 const store = new ProjectStore();
@@ -16,17 +18,22 @@ const store = new ProjectStore();
 // Initialize map controller
 const mapController = new MapController('map', store);
 
-// View switching between Map View, Single Line Diagram, and BOQ & Costing Workspace
+// View switching between Map View, Single Line Diagram, BOQ & Costing, and Energy Simulation Workspace
 let sldView: SingleLineDiagramUI | null = null;
 let boqView: BoqAndDupaUI | null = null;
+let simView: SimulationWorkspaceUI | null = null;
+let ribbon: RibbonUI;
+let inspector: InspectorUI;
 
-function setMainView(view: 'map' | 'sld' | 'boq'): void {
+function setMainView(view: 'map' | 'sld' | 'boq' | 'simulation', targetSystemId?: string): void {
   const btnMap = document.getElementById('btn-view-map');
   const btnSld = document.getElementById('btn-view-sld');
   const btnBoq = document.getElementById('btn-view-boq');
+  const btnSim = document.getElementById('btn-view-simulation');
   const mapWorkspace = document.getElementById('map-workspace');
   const sldWorkspace = document.getElementById('sld-workspace');
   const boqWorkspace = document.getElementById('boq-workspace');
+  const simWorkspace = document.getElementById('simulation-workspace');
 
   btnMap?.classList.toggle('active', view === 'map');
   btnMap?.setAttribute('aria-selected', String(view === 'map'));
@@ -34,13 +41,19 @@ function setMainView(view: 'map' | 'sld' | 'boq'): void {
   btnSld?.setAttribute('aria-selected', String(view === 'sld'));
   btnBoq?.classList.toggle('active', view === 'boq');
   btnBoq?.setAttribute('aria-selected', String(view === 'boq'));
+  btnSim?.classList.toggle('active', view === 'simulation');
+  btnSim?.setAttribute('aria-selected', String(view === 'simulation'));
 
   if (mapWorkspace) mapWorkspace.style.display = view === 'map' ? 'block' : 'none';
   if (sldWorkspace) sldWorkspace.style.display = view === 'sld' ? 'flex' : 'none';
   if (boqWorkspace) boqWorkspace.style.display = view === 'boq' ? 'flex' : 'none';
+  if (simWorkspace) simWorkspace.style.display = view === 'simulation' ? 'flex' : 'none';
+
+  ribbon?.setView(view);
 
   if (view === 'map') {
     mapController.invalidateSize();
+    setTimeout(() => mapController.invalidateSize(), 50);
   } else if (view === 'sld') {
     if (!sldView) {
       sldView = new SingleLineDiagramUI('sld-workspace-mount', store);
@@ -53,13 +66,41 @@ function setMainView(view: 'map' | 'sld' | 'boq'): void {
     } else {
       boqView.render();
     }
+  } else if (view === 'simulation') {
+    if (!simView) {
+      simView = new SimulationWorkspaceUI('simulation-workspace-mount', store, {
+        onOpenSolarYield: (sysId) => inspector.openSolarYieldModal(sysId),
+        onOpenLoadProfile: (sysId) => inspector.openLoadProfileModal(sysId),
+        onOpenPdfReport: (sysId) => pdfReportModal.open(sysId)
+      });
+    }
+    if (targetSystemId) {
+      simView.setSystem(targetSystemId);
+    } else {
+      simView.render();
+    }
   }
 }
 
+// Initialize PDF Report Modal
+const pdfReportModal = new PdfReportModalUI('pdf-report-modal', store, () => {
+  mapController.invalidateSize();
+  setTimeout(() => {
+    mapController.invalidateSize();
+    mapController.render(true);
+  }, 50);
+});
+(window as any).openPdfReport = (sysId?: string) => pdfReportModal.open(sysId);
+
+document.getElementById('btn-open-pdf-report')?.addEventListener('click', () => {
+  pdfReportModal.open();
+});
+
 // Initialize UI views
-const ribbon = new RibbonUI('ribbon', store, mapController, (view) => setMainView(view));
-new InspectorUI('inspector', store, mapController);
+ribbon = new RibbonUI('ribbon', store, mapController, (view) => setMainView(view));
+inspector = new InspectorUI('inspector', store, mapController, (targetSysId) => setMainView('simulation', targetSysId));
 new RegistryModalUI('registryModal', store, mapController);
+sldView = new SingleLineDiagramUI('sld-workspace-mount', store, (sysId) => pdfReportModal.open(sysId));
 
 document.getElementById('btn-open-boq')?.addEventListener('click', () => {
   setMainView('boq');
@@ -76,6 +117,10 @@ document.getElementById('btn-view-sld')?.addEventListener('click', () => {
 
 document.getElementById('btn-view-boq')?.addEventListener('click', () => {
   setMainView('boq');
+});
+
+document.getElementById('btn-view-simulation')?.addEventListener('click', () => {
+  setMainView('simulation');
 });
 
 // Initialize Cloud Sync & Multi-PC Project Management

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ProjectStore } from './projectStore';
 import { localMetricToLatLng } from '../geo/projection';
+import { FirebaseSyncService } from '../services/firebaseSync';
 
 describe('ProjectStore & Multi-System Linking', () => {
   let store: ProjectStore;
@@ -1351,6 +1352,306 @@ describe('ProjectStore & Multi-System Linking', () => {
       expect(store.getSystems().length).toBe(1);
       expect(store.selectedSystemId).toBeDefined();
       expect(store.getZones().length).toBe(0);
+    });
+
+    it('does not run layout optimization or alter layoutVersion when selecting arrays or raceways', () => {
+      const sys = store.getSystems()[0];
+      const vertices = [
+        origin,
+        localMetricToLatLng({ x: 25, y: 0 }, origin),
+        localMetricToLatLng({ x: 25, y: 15 }, origin),
+        localMetricToLatLng({ x: 0, y: 15 }, origin)
+      ];
+      const zone = store.addZone(vertices, 'roof', 'Selection Jitter Test', sys.id);
+      const initialLayoutVersion = store.layoutVersion;
+      const initialPanels = store.getPanelsForZone(zone.id);
+      const initialOffsetX = zone.config.alignmentOffsetX;
+      const initialOffsetY = zone.config.alignmentOffsetY;
+
+      // 1. Select the array zone
+      store.selectZone(zone.id);
+      expect(store.selectedZoneId).toBe(zone.id);
+      expect(store.layoutVersion).toBe(initialLayoutVersion); // Unchanged!
+      expect(zone.config.alignmentOffsetX).toBe(initialOffsetX); // No shift!
+      expect(zone.config.alignmentOffsetY).toBe(initialOffsetY);
+      expect(store.getPanelsForZone(zone.id).length).toBe(initialPanels.length);
+
+      // 2. Select system / homerun raceway
+      store.setSystemHomerun(sys.id, [origin, localMetricToLatLng({ x: 5, y: 5 }, origin)], 2);
+      const homerunLayoutVersion = store.layoutVersion;
+
+      store.selectSystem(sys.id, false);
+      expect(store.selectedSystemId).toBe(sys.id);
+      expect(store.layoutVersion).toBe(homerunLayoutVersion); // Unchanged on selection!
+
+      // 3. Multi-select arrays
+      store.selectZone(zone.id, true);
+      expect(store.layoutVersion).toBe(homerunLayoutVersion);
+
+      // 4. Deselect
+      store.selectZone(null);
+      expect(store.layoutVersion).toBe(homerunLayoutVersion);
+
+      // 5. Editing layouts (e.g. optimize or move vertex) DOES update layoutVersion
+      store.optimizeZoneGridShift(zone.id, 6);
+      expect(store.layoutVersion).toBeGreaterThan(homerunLayoutVersion);
+    });
+
+    it('keeps PV module selected without triggering cloud sync echo payload diffs or layout Version bumps', () => {
+      const vertices = [
+        origin,
+        localMetricToLatLng({ x: 25, y: 0 }, origin),
+        localMetricToLatLng({ x: 25, y: 15 }, origin),
+        localMetricToLatLng({ x: 0, y: 15 }, origin)
+      ];
+      const zone = store.addZone(vertices, 'roof', 'PV Selection Stability');
+      const panels = store.getPanelsForZone(zone.id);
+      expect(panels.length).toBeGreaterThan(0);
+
+      const syncService = FirebaseSyncService.getInstance();
+      const jsonBeforeSelect = store.exportProjectJson();
+      const comparableBefore = syncService.getComparablePayload(jsonBeforeSelect);
+      const layoutVerBefore = store.layoutVersion;
+
+      // Select a PV module
+      store.selectPanel(panels[0].id);
+
+      expect(store.selectedPanelId).toBe(panels[0].id);
+      expect(store.getSelectedPanel()?.id).toBe(panels[0].id);
+      expect(store.isZoneSelected(zone.id)).toBe(false);
+      expect(store.layoutVersion).toBe(layoutVerBefore);
+
+      // Comparable cloud payload must be identical so selecting a PV module does not trigger a 500ms cloud push & echo re-import
+      const jsonAfterSelect = store.exportProjectJson();
+      const comparableAfter = syncService.getComparablePayload(jsonAfterSelect);
+      expect(comparableAfter).toBe(comparableBefore);
+    });
+
+    describe('Match Properties (MATCHPROP)', () => {
+      it('copies full array configuration from source array to target arrays', () => {
+        const v1 = [
+          origin,
+          localMetricToLatLng({ x: 25, y: 0 }, origin),
+          localMetricToLatLng({ x: 25, y: 15 }, origin),
+          localMetricToLatLng({ x: 0, y: 15 }, origin)
+        ];
+        const v2 = [
+          localMetricToLatLng({ x: 30, y: 0 }, origin),
+          localMetricToLatLng({ x: 55, y: 0 }, origin),
+          localMetricToLatLng({ x: 55, y: 15 }, origin),
+          localMetricToLatLng({ x: 30, y: 15 }, origin)
+        ];
+
+        const srcZone = store.addZone(v1, 'roof', 'Source Array');
+        store.setArrayModule(srcZone.id, 'mod_residential_420w');
+        store.updateZoneConfig(srcZone.id, {
+          azimuthDeg: 210,
+          tiltDeg: 22,
+          rowSpacingM: 3.2,
+          colSpacingM: 0.05,
+          setbackM: 0.8,
+          orientation: 'landscape',
+          railCount: 3,
+          railOverhangM: 0.15
+        });
+
+        const targetZone = store.addZone(v2, 'roof', 'Target Array');
+        expect(targetZone.config.azimuthDeg).toBe(180);
+        expect(targetZone.config.tiltDeg).toBe(15);
+        expect(targetZone.moduleId).not.toBe('mod_residential_420w');
+
+        // Apply Match Properties
+        const res = store.matchZoneProperties(srcZone.id, targetZone.id);
+        expect(res.success).toBe(true);
+        expect(res.matchedCount).toBe(1);
+
+        // Verify target array has copied source properties
+        const updatedTarget = store.getZone(targetZone.id)!;
+        expect(updatedTarget.moduleId).toBe('mod_residential_420w');
+        expect(updatedTarget.config.azimuthDeg).toBe(210);
+        expect(updatedTarget.config.tiltDeg).toBe(22);
+        expect(updatedTarget.config.rowSpacingM).toBe(3.2);
+        expect(updatedTarget.config.colSpacingM).toBe(0.05);
+        expect(updatedTarget.config.setbackM).toBe(0.8);
+        expect(updatedTarget.config.orientation).toBe('landscape');
+        expect(updatedTarget.config.railCount).toBe(3);
+        expect(updatedTarget.config.railOverhangM).toBe(0.15);
+
+        // Panels should be regenerated using new module wattage and dimensions
+        const targetPanels = store.getPanelsForZone(targetZone.id);
+        expect(targetPanels.length).toBeGreaterThan(0);
+        expect(targetPanels[0].electrical.nominalPowerW).toBe(420);
+        expect(targetPanels[0].moduleId).toBe('mod_residential_420w');
+      });
+
+      it('supports granular partial matching (e.g. match only azimuth & tilt)', () => {
+        const v1 = [
+          origin,
+          localMetricToLatLng({ x: 25, y: 0 }, origin),
+          localMetricToLatLng({ x: 25, y: 15 }, origin),
+          localMetricToLatLng({ x: 0, y: 15 }, origin)
+        ];
+        const v2 = [
+          localMetricToLatLng({ x: 30, y: 0 }, origin),
+          localMetricToLatLng({ x: 55, y: 0 }, origin),
+          localMetricToLatLng({ x: 55, y: 15 }, origin),
+          localMetricToLatLng({ x: 30, y: 15 }, origin)
+        ];
+
+        const srcZone = store.addZone(v1, 'roof', 'Source Array');
+        store.setArrayModule(srcZone.id, 'mod_residential_420w');
+        store.updateZoneConfig(srcZone.id, {
+          azimuthDeg: 270,
+          tiltDeg: 30,
+          rowSpacingM: 4.0
+        });
+
+        const targetZone = store.addZone(v2, 'roof', 'Target Array');
+        const origTargetModule = targetZone.moduleId;
+        const origTargetRowSpacing = targetZone.config.rowSpacingM;
+
+        // Match ONLY azimuth and tilt
+        const res = store.matchZoneProperties(srcZone.id, targetZone.id, {
+          matchModule: false,
+          matchMountType: false,
+          matchOrientation: false,
+          matchAzimuth: true,
+          matchTilt: true,
+          matchSpacing: false,
+          matchSetback: false
+        });
+
+        expect(res.success).toBe(true);
+        const updatedTarget = store.getZone(targetZone.id)!;
+        expect(updatedTarget.config.azimuthDeg).toBe(270);
+        expect(updatedTarget.config.tiltDeg).toBe(30);
+        // Untoggled properties must remain unchanged!
+        expect(updatedTarget.moduleId).toBe(origTargetModule);
+        expect(updatedTarget.config.rowSpacingM).toBe(origTargetRowSpacing);
+      });
+
+      it('handles conversion between roof and ground mount racking structures', () => {
+        const v1 = [
+          origin,
+          localMetricToLatLng({ x: 30, y: 0 }, origin),
+          localMetricToLatLng({ x: 30, y: 20 }, origin),
+          localMetricToLatLng({ x: 0, y: 20 }, origin)
+        ];
+        const v2 = [
+          localMetricToLatLng({ x: 35, y: 0 }, origin),
+          localMetricToLatLng({ x: 65, y: 0 }, origin),
+          localMetricToLatLng({ x: 65, y: 20 }, origin),
+          localMetricToLatLng({ x: 35, y: 20 }, origin)
+        ];
+
+        // Source is a ground mount array with 2x14 tables
+        const groundSource = store.addZone(v1, 'ground', 'Ground Source');
+        expect(groundSource.config.mountType).toBe('ground');
+        expect(groundSource.tables).toBeDefined();
+        expect(groundSource.tables!.length).toBeGreaterThan(0);
+
+        // Target starts as roof mount
+        const roofTarget = store.addZone(v2, 'roof', 'Roof Target');
+        expect(roofTarget.config.mountType).toBe('roof');
+        expect(roofTarget.rails).toBeDefined();
+
+        // Match properties from ground to roof
+        store.matchZoneProperties(groundSource.id, roofTarget.id, { matchMountType: true });
+
+        const updated = store.getZone(roofTarget.id)!;
+        expect(updated.config.mountType).toBe('ground');
+        expect(updated.tables).toBeDefined();
+        expect(updated.tables!.length).toBeGreaterThan(0);
+        expect(updated.tableCount).toBeGreaterThan(0);
+      });
+
+      it('allows re-linking destination arrays to source system when matchSystem is enabled', () => {
+        const sys1 = store.getSystems()[0];
+        const sys2 = store.addSystem('Secondary System');
+
+        const v1 = [origin, localMetricToLatLng({ x: 20, y: 0 }, origin), localMetricToLatLng({ x: 20, y: 10 }, origin), localMetricToLatLng({ x: 0, y: 10 }, origin)];
+        const v2 = [localMetricToLatLng({ x: 25, y: 0 }, origin), localMetricToLatLng({ x: 45, y: 0 }, origin), localMetricToLatLng({ x: 45, y: 10 }, origin), localMetricToLatLng({ x: 25, y: 10 }, origin)];
+
+        const src = store.addZone(v1, 'roof', 'Array in Sys2', sys2.id);
+        const tgt = store.addZone(v2, 'roof', 'Array in Sys1', sys1.id);
+        expect(tgt.systemId).toBe(sys1.id);
+
+        store.matchZoneProperties(src.id, tgt.id, { matchSystem: true });
+
+        const updatedTgt = store.getZone(tgt.id)!;
+        expect(updatedTgt.systemId).toBe(sys2.id);
+        expect(sys2.zoneIds).toContain(tgt.id);
+        expect(sys1.zoneIds).not.toContain(tgt.id);
+      });
+
+      it('matches properties to multiple target arrays simultaneously', () => {
+        const v1 = [origin, localMetricToLatLng({ x: 20, y: 0 }, origin), localMetricToLatLng({ x: 20, y: 10 }, origin), localMetricToLatLng({ x: 0, y: 10 }, origin)];
+        const v2 = [localMetricToLatLng({ x: 25, y: 0 }, origin), localMetricToLatLng({ x: 45, y: 0 }, origin), localMetricToLatLng({ x: 45, y: 10 }, origin), localMetricToLatLng({ x: 25, y: 10 }, origin)];
+        const v3 = [localMetricToLatLng({ x: 50, y: 0 }, origin), localMetricToLatLng({ x: 70, y: 0 }, origin), localMetricToLatLng({ x: 70, y: 10 }, origin), localMetricToLatLng({ x: 50, y: 10 }, origin)];
+
+        const src = store.addZone(v1, 'roof', 'Source Array');
+        store.updateZoneConfig(src.id, { tiltDeg: 28, azimuthDeg: 195 });
+
+        const tgt1 = store.addZone(v2, 'roof', 'Target Array 1');
+        const tgt2 = store.addZone(v3, 'roof', 'Target Array 2');
+
+        const res = store.matchZoneProperties(src.id, [tgt1.id, tgt2.id]);
+        expect(res.success).toBe(true);
+        expect(res.matchedCount).toBe(2);
+
+        expect(store.getZone(tgt1.id)!.config.tiltDeg).toBe(28);
+        expect(store.getZone(tgt1.id)!.config.azimuthDeg).toBe(195);
+        expect(store.getZone(tgt2.id)!.config.tiltDeg).toBe(28);
+        expect(store.getZone(tgt2.id)!.config.azimuthDeg).toBe(195);
+      });
+    });
+
+    describe('Solar Yield Estimation & Solar Atlas Integration', () => {
+      it('calculates solar yield estimate through project store', () => {
+        const v = [
+          origin,
+          localMetricToLatLng({ x: 30, y: 0 }, origin),
+          localMetricToLatLng({ x: 30, y: 15 }, origin),
+          localMetricToLatLng({ x: 0, y: 15 }, origin)
+        ];
+        const zone = store.addZone(v, 'roof', 'Solar Roof Array');
+        expect(zone.activePanelCount).toBeGreaterThan(0);
+
+        const yieldResult = store.getSolarYieldEstimate();
+        expect(yieldResult.annualYieldKwh).toBeGreaterThan(0);
+        expect(yieldResult.specificYieldKwhPerKwp).toBeGreaterThan(1000);
+        expect(yieldResult.performanceRatio).toBeGreaterThan(70);
+        expect(yieldResult.monthlyBreakdown.length).toBe(12);
+        expect(yieldResult.dataSourceName).toContain('Global Solar Climatology');
+      });
+
+      it('allows setting custom solar resource and persists it in JSON export', () => {
+        const v = [
+          origin,
+          localMetricToLatLng({ x: 20, y: 0 }, origin),
+          localMetricToLatLng({ x: 20, y: 10 }, origin),
+          localMetricToLatLng({ x: 0, y: 10 }, origin)
+        ];
+        store.addZone(v, 'ground', 'Solar Ground Array');
+
+        store.setCustomSolarResource({
+          sourceName: 'NASA POWER Climatology (Custom)',
+          monthlyGhiKwhPerM2Day: [5, 5.5, 6, 6.5, 6, 5.5, 5, 5, 5.2, 5, 4.8, 4.5],
+          monthlyAmbientTempC: [25, 26, 27, 28, 28, 27, 27, 27, 27, 26, 26, 25]
+        });
+
+        const yieldResult = store.getSolarYieldEstimate();
+        expect(yieldResult.dataSourceName).toBe('NASA POWER Climatology (Custom)');
+
+        // Test export & import
+        const exportedJson = store.exportProjectJson();
+        expect(exportedJson).toContain('NASA POWER Climatology (Custom)');
+
+        const newStore = new ProjectStore();
+        const success = newStore.importProjectJson(exportedJson);
+        expect(success).toBe(true);
+        expect(newStore.customSolarResource?.sourceName).toBe('NASA POWER Climatology (Custom)');
+      });
     });
   });
 });

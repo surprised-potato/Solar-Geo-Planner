@@ -1,6 +1,7 @@
 import { ProjectStore } from '../store/projectStore';
 import { calculateRecommendedRowSpacing } from '../geo/autofill';
 import { DEFAULT_GROUND_CONFIG, DEFAULT_ROOF_CONFIG } from '../types/solar';
+import { escapeHtml } from '../utils/html';
 
 export class SidebarUI {
   private container: HTMLElement;
@@ -79,7 +80,7 @@ export class SidebarUI {
                 <div class="zone-list-item selected" data-zone-id="${z.id}">
                   <span class="color-badge" style="background-color: ${z.color}"></span>
                   <div class="zone-meta" style="flex: 1;">
-                    <strong>${z.name}</strong>
+                    <strong>${escapeHtml(z.name)}</strong>
                     <small>${z.activePanelCount} panels &bull; ${z.totalKwp} kWp</small>
                   </div>
                   <small style="color: var(--accent-blue); font-size: 11px;">✓ Selected</small>
@@ -124,7 +125,7 @@ export class SidebarUI {
                   <div class="zone-list-item ${this.store.isZoneSelected(z.id) ? 'selected' : ''}" data-zone-id="${z.id}">
                     <span class="color-badge" style="background-color: ${z.color}"></span>
                     <div class="zone-meta">
-                      <strong>${z.name}</strong>
+                      <strong>${escapeHtml(z.name)}</strong>
                       <small>${z.activePanelCount} panels &bull; ${z.totalKwp} kWp</small>
                     </div>
                   </div>
@@ -159,7 +160,7 @@ export class SidebarUI {
       <div class="sidebar-header">
         <div class="zone-title-row">
           <span class="color-badge" style="background-color: ${zone.color}"></span>
-          <input type="text" id="zone-name-input" class="zone-name-input" value="${zone.name}" />
+          <input type="text" id="zone-name-input" class="zone-name-input" value="${escapeHtml(zone.name)}" />
           <button id="btn-delete-zone" class="btn-icon danger" title="Delete Zone">🗑️</button>
         </div>
 
@@ -364,7 +365,7 @@ export class SidebarUI {
                 .map(
                   ko => `
                 <div class="keepout-item">
-                  <span>${ko.name}</span>
+                  <span>${escapeHtml(ko.name)}</span>
                   <button class="btn-remove-keepout" data-ko-id="${ko.id}">✕</button>
                 </div>
               `
@@ -381,7 +382,7 @@ export class SidebarUI {
           <h4>⚡ Module Specifications</h4>
           <div class="control-row">
             <label>Model Name</label>
-            <input type="text" id="module-name" class="input-text" value="${cfg.electrical.modelName}" />
+            <input type="text" id="module-name" class="input-text" value="${escapeHtml(cfg.electrical.modelName)}" />
           </div>
           <div class="grid-2col">
             <label>Rated Power (W)

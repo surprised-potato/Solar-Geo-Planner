@@ -4,89 +4,96 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Assumed Data Model
+    // Data Model
     // ===============================================================
-    //
-    // This security rules file assumes the following data structures:
     //
     // Collection: projects
-    // Document ID: {projectId} (string, 1 to 100 characters)
+    // Document ID: {projectId} (string, 1 to 128 characters)
     // Fields:
-    //   - id: string (required, 1 to 100 chars, matches projectId, immutable)
-    //   - name: string (required, 1 to 200 chars)
-    //   - createdAt: string or timestamp (required, ISO 8601 string or timestamp, immutable)
-    //   - updatedAt: string or timestamp (required, ISO 8601 string or timestamp)
-    //   - dataJson: string (required, serialized project JSON <= 900,000 chars / ~900KB)
-    //   - zoneCount: number (optional, >= 0)
-    //   - totalKwp: number (optional, >= 0)
+    //   - id: string (required, matches {projectId}, immutable)
+    //   - ownerUid: string (required, Firebase Auth uid of the creator, immutable)
+    //   - memberEmails: list<string> (optional, <= 50 lower-case emails the owner shared with)
+    //   - name: string (required, <= 500 chars)
+    //   - createdAt / updatedAt: ISO string, timestamp or epoch millis (required)
+    //   - dataJson: string (required, serialized project JSON <= 1,000,000 chars)
+    //   - zoneCount, totalKwp: number >= 0 (optional)
+    //   - description: string <= 1000 (optional), version: string <= 50 (optional)
     //
     // Access Control:
-    //   - Public / shared workspace for multi-device sync without mandatory auth.
-    //   - All operations are guarded with strict type, size, and schema validations.
-    //   - Immutable fields (id, createdAt) protected on update.
-    //   - All other collections: Denied by default.
+    //   - Every request requires Firebase Authentication (Google sign-in).
+    //   - Projects are private to their owner. The owner can share a project with
+    //     specific Google accounts by listing their (verified) emails in memberEmails.
+    //   - Members can read and edit project content, but only the owner can change
+    //     sharing (memberEmails) or delete the project. ownerUid and id never change.
+    //   - Default deny for every other path.
     // ===============================================================
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-
-    // Check if required fields exist
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Check that only defined fields are present in the payload (prevents schema pollution)
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function isOwner(data) {
+      return signedIn() && data.ownerUid == request.auth.uid;
     }
 
-    // Validate date format (ISO 8601 string) or Firestore native timestamp
+    function isMember(data) {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in data.get('memberEmails', []);
+    }
+
+    function canAccess(data) {
+      return isOwner(data) || isMember(data);
+    }
+
     function isValidDateOrTimestamp(val) {
-      return (val is string && val.matches('^\\d{4}-\\d{2}-\\d{2}T.*')) || val is timestamp;
+      return (val is string && val.size() >= 10 && val.size() <= 100) ||
+             val is timestamp ||
+             (val is number && val > 0);
     }
 
-    // Ensure immutable fields are not modified during update operations
-    function isProjectUpdateValid() {
-      return request.resource.data.id == resource.data.id &&
-             request.resource.data.createdAt == resource.data.createdAt;
-    }
-
-    // ===============================================================
-    // Domain Validator (Validator Function Pattern)
-    // Used in BOTH create and update rules to eliminate the Update Bypass vulnerability
-    // ===============================================================
     function isValidProject(data, projectId) {
-      return hasRequiredFields(['id', 'name', 'createdAt', 'updatedAt', 'dataJson']) &&
-             hasOnlyAllowedFields(['id', 'name', 'createdAt', 'updatedAt', 'dataJson', 'zoneCount', 'totalKwp']) &&
+      return data.keys().hasAll(['id', 'ownerUid', 'name', 'createdAt', 'updatedAt', 'dataJson']) &&
+             data.keys().hasOnly(['id', 'ownerUid', 'memberEmails', 'name', 'createdAt', 'updatedAt', 'dataJson', 'zoneCount', 'totalKwp', 'description', 'version']) &&
              data.id is string &&
              data.id == projectId &&
              data.id.size() >= 1 &&
-             data.id.size() <= 100 &&
+             data.id.size() <= 128 &&
+             data.ownerUid is string &&
              data.name is string &&
-             data.name.size() >= 1 &&
-             data.name.size() <= 200 &&
+             data.name.size() <= 500 &&
              isValidDateOrTimestamp(data.createdAt) &&
              isValidDateOrTimestamp(data.updatedAt) &&
              data.dataJson is string &&
-             data.dataJson.size() <= 900000 &&
+             data.dataJson.size() <= 1000000 &&
+             (!('memberEmails' in data) || (data.memberEmails is list && data.memberEmails.size() <= 50)) &&
              (!('zoneCount' in data) || (data.zoneCount is number && data.zoneCount >= 0)) &&
-             (!('totalKwp' in data) || (data.totalKwp is number && data.totalKwp >= 0));
+             (!('totalKwp' in data) || (data.totalKwp is number && data.totalKwp >= 0)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+             (!('version' in data) || (data.version is string && data.version.size() <= 50));
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
-    // Project Documents: Shared workspace allowing read/write for cross-device sync
     match /projects/{projectId} {
-      allow read: if true;
-      allow create: if isValidProject(request.resource.data, projectId);
-      allow update: if isValidProject(request.resource.data, projectId) && isProjectUpdateValid();
-      allow delete: if true;
+      // Reading a not-yet-created ID is allowed so a client can check before creating it.
+      allow get: if signedIn() && (resource == null || canAccess(resource.data));
+      // Lists must be constrained to ownerUid == uid or memberEmails array-contains email.
+      allow list: if canAccess(resource.data);
+
+      allow create: if signedIn()
+        && isValidProject(request.resource.data, projectId)
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if canAccess(resource.data)
+        && isValidProject(request.resource.data, projectId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && (isOwner(resource.data)
+            || request.resource.data.get('memberEmails', []) == resource.data.get('memberEmails', []));
+
+      allow delete: if isOwner(resource.data);
     }
 
-    // Default deny for all other collections and administrative paths
     match /{document=**} {
       allow read, write: if false;
     }

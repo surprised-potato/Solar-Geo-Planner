@@ -418,15 +418,27 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
     expect(svg).toContain('2P DC MCB');
     expect(svg).toContain('25A');
 
-    // DC SPDs running parallel and grounded
+    // DC SPDs running parallel and grounded ahead of the DC Breaker
     expect(svg).toContain('wireframe-dc-spd');
     expect(svg).toContain('DC SPD');
     expect(svg).toContain('Type 2');
     expect(svg).toContain('PE GND');
+    expect(svg).toContain('wireframe-dc-ground-bus');
+    expect(svg).toContain('TO GROUND ROD (PEC 2.50)');
 
-    // Column headers
+    // Verify DC SPD is placed before DC Breaker in schematic flow
+    const spdIndex = svg.indexOf('wireframe-dc-spd');
+    const breakerIndex = svg.indexOf('wireframe-dc-breaker');
+    expect(spdIndex).toBeGreaterThan(-1);
+    expect(breakerIndex).toBeGreaterThan(-1);
+    expect(spdIndex).toBeLessThan(breakerIndex);
+
+    // Column headers order: DC SPD (⏚) ahead of DC BREAKER
     expect(svg).toContain('DC BREAKER');
     expect(svg).toContain('DC SPD (⏚)');
+    const headerSpdIndex = svg.indexOf('DC SPD (⏚)');
+    const headerBreakerIndex = svg.indexOf('DC BREAKER');
+    expect(headerSpdIndex).toBeLessThan(headerBreakerIndex);
 
     // General Electrical Notes
     expect(svg).toContain('2-pole DC Circuit Breakers');
@@ -436,6 +448,39 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
     (sldUI as any).showCableSchedule = true;
     const schedule = sldUI.renderCableScheduleModal(model);
     expect(schedule).toContain('25A 2P DC MCB + Type 2 DC SPD (⏚)');
+  });
+
+  it('ensures MDP enclosure remains neatly and appropriately sized when SLD is tall due to many strings', () => {
+    // Add multiple large zones to generate many strings
+    for (let i = 1; i <= 4; i++) {
+      const vertices = [
+        localMetricToLatLng({ x: 0, y: i * 30 }, origin),
+        localMetricToLatLng({ x: 60, y: i * 30 }, origin),
+        localMetricToLatLng({ x: 60, y: i * 30 + 25 }, origin),
+        localMetricToLatLng({ x: 0, y: i * 30 + 25 }, origin)
+      ];
+      store.addZone(vertices, 'roof', `Commercial Rooftop Zone ${i}`);
+    }
+
+    const selectedSys = store.getSelectedSystem()!;
+    const model = buildSldSystemModel(store, selectedSys.id);
+    expect(model.strings.length).toBeGreaterThan(20);
+
+    const sldUI = new SingleLineDiagramUI(null as any, store, selectedSys.id);
+    const svg = sldUI.generateWireframeSvg(model);
+
+    // Verify MDP outer frame height is appropriately sized (275px) and does not stretch
+    const mdpFrameMatch = svg.match(/<g class="wireframe-mdp-enclosure">\s*<!-- Panel Outer Frame -->\s*<rect [^>]*height="(\d+)"/);
+    expect(mdpFrameMatch).not.toBeNull();
+    const mdpHeight = parseInt(mdpFrameMatch![1], 10);
+    expect(mdpHeight).toBe(275); // Fixed, neat 275px height, not thousands of pixels!
+
+    // Verify Utility Grid and Utility Meter are present and neatly proportioned
+    expect(svg).toContain('wireframe-grid-pcc');
+    expect(svg).toContain('wireframe-revenue-meter');
+    expect(svg).toContain('UTILITY GRID');
+    expect(svg).toContain('UTILITY METER');
+    expect(svg).toContain('MAIN DISTRIBUTION PANEL (MDP)');
   });
 
   it('verifies TableViewTab includes sld tab for table schedules navigation', () => {
@@ -621,5 +666,279 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
     // Facility Load is still tapped on Load Side of MDP Main Breaker
     expect(svgLine).toContain('FACILITY LOAD');
     expect(svgLine).toContain('▲ TAPPED ON LOAD SIDE');
+  });
+
+  it('orients utility grid, meter, and MDP vertically and aligns solar connection to the tapping point', () => {
+    const sys = store.getSelectedSystem()!;
+    const model = buildSldSystemModel(store, sys.id);
+    const sldUI = new SingleLineDiagramUI(null as any, store, sys.id);
+    const svg = sldUI.generateWireframeSvg(model);
+
+    // 1. Vertical sequence in SVG elements: Grid PCC -> Utility Meter -> MDP Enclosure
+    const gridElemIdx = svg.indexOf('wireframe-grid-pcc');
+    const meterElemIdx = svg.indexOf('wireframe-revenue-meter');
+    const mdpElemIdx = svg.indexOf('wireframe-mdp-enclosure');
+
+    expect(gridElemIdx).toBeGreaterThan(0);
+    expect(meterElemIdx).toBeGreaterThan(gridElemIdx);
+    expect(mdpElemIdx).toBeGreaterThan(meterElemIdx);
+
+    // 2. Service conductor labels & connections:
+    expect(svg).toContain('SERVICE ENTRANCE');
+    expect(svg).toContain('UTILITY SERVICE');
+    expect(svg).toContain('UTILITY METER');
+    expect(svg).toContain('UTILITY GRID');
+    expect(svg).toContain('MAIN DISTRIBUTION PANEL (MDP)');
+
+    // 3. Aligned horizontal solar feeder with in-line breaker
+    expect(svg).toContain('class="wireframe-tap-toggle-btn"');
+
+    // 4. Test switching tapping point changes breaker orientation relative to tap point
+    // Default or line_side: Breaker is below tap point
+    store.updateSystem(sys.id, { mdpTapType: 'line_side' });
+    const lineModel = buildSldSystemModel(store, sys.id);
+    const lineSvg = sldUI.generateWireframeSvg(lineModel);
+    expect(lineSvg).toContain('PV SUPPLY TAP CB');
+    expect(lineSvg).toContain('SUPPLY TAP POINT');
+    expect(lineSvg).toContain('LINE-SIDE TAP: PEC 6.90.8.1');
+
+    // load_side: Breaker is above tap point
+    store.updateSystem(sys.id, { mdpTapType: 'load_side' });
+    const loadModel = buildSldSystemModel(store, sys.id);
+    const loadSvg = sldUI.generateWireframeSvg(loadModel);
+    expect(loadSvg).toContain('PV TIE MCCB');
+    expect(loadSvg).toContain('LOAD TAP POINT');
+    expect(loadSvg).toContain('LOAD-SIDE TAP: PEC 6.90.8.2');
+  });
+
+  it('generates fully compliant standalone SVG with explicit dimensions, solid background, and valid XML encoding', () => {
+    const sys = store.getSelectedSystem()!;
+    // Update system name with special characters to test XML escaping
+    store.updateSystem(sys.id, {
+      name: 'Commercial Solar & Storage <Phase 1>'
+    });
+    const model = buildSldSystemModel(store, sys.id);
+    const sldUI = new SingleLineDiagramUI(null as any, store, sys.id);
+    const standaloneSvg = sldUI.generateStandaloneSvg(model);
+
+    // 1. Valid XML header & root svg tag
+    expect(standaloneSvg.startsWith('<?xml version="1.0" encoding="UTF-8" standalone="no"?>')).toBe(true);
+    expect(standaloneSvg).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(standaloneSvg).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+
+    // 2. Explicit pixel dimensions matching CAD canvas
+    expect(standaloneSvg).toMatch(/width="\d+"/);
+    expect(standaloneSvg).toMatch(/height="\d+"/);
+    expect(standaloneSvg).not.toMatch(/<svg[^>]+width="100%"/);
+
+    // 3. Embedded font style block
+    expect(standaloneSvg).toContain('<style type="text/css">');
+
+    // 4. Solid background fill present
+    expect(standaloneSvg).toContain('<rect width="100%" height="100%" fill="#081226" />');
+
+    // 5. No invalid XML entities like &bull; or bare &
+    expect(standaloneSvg).not.toContain('&bull;');
+    expect(standaloneSvg).toContain('Commercial Solar &amp; Storage &lt;Phase 1&gt;');
+  });
+
+  it('renders refined toolbar with HUD telemetry bar, architecture badges, and export buttons', () => {
+    const sys = store.getSelectedSystem()!;
+    const mockContainer: any = {
+      innerHTML: '',
+      querySelector: () => null,
+      querySelectorAll: () => []
+    };
+    const sldUI = new SingleLineDiagramUI(mockContainer, store, sys.id);
+    sldUI.render();
+
+    // Refined badge title
+    expect(mockContainer.innerHTML).toContain('class="sld-badge-title"');
+    expect(mockContainer.innerHTML).toContain('SLD');
+
+    // Architecture badge strip
+    expect(mockContainer.innerHTML).toContain('class="sld-arch-strip"');
+    expect(mockContainer.innerHTML).toContain('class="sld-arch-tag inv"');
+    expect(mockContainer.innerHTML).toContain('class="sld-arch-tag grid"');
+
+    // Live Telemetry HUD Bar
+    expect(mockContainer.innerHTML).toContain('class="sld-hud-bar"');
+    expect(mockContainer.innerHTML).toContain('class="sld-hud-stat primary"');
+    expect(mockContainer.innerHTML).toContain('class="sld-hud-stat ac"');
+
+    // Export group buttons
+    expect(mockContainer.innerHTML).toContain('class="sld-btn-group sld-export-group"');
+    expect(mockContainer.innerHTML).toContain('id="sld-btn-export-svg"');
+    expect(mockContainer.innerHTML).toContain('id="sld-btn-export-png"');
+
+    // Test calling export methods safely
+    expect(() => sldUI.exportSvg()).not.toThrow();
+    expect(() => sldUI.exportPng()).not.toThrow();
+  });
+
+  it('supports rotating the SLD 90 degrees so the sheet expands horizontally (wider) rather than taller', () => {
+    const sys = store.getSelectedSystem()!;
+    const model = buildSldSystemModel(store, sys.id);
+
+    const mockContainer: any = {
+      innerHTML: '',
+      querySelector: () => null,
+      querySelectorAll: () => []
+    };
+    const sldUI = new SingleLineDiagramUI(mockContainer, store, sys.id);
+
+    // Initial state: 0 degrees
+    expect(sldUI.getRotation()).toBe(0);
+    const standardSvg = sldUI.generateWireframeSvg(model);
+    expect(standardSvg).toContain('viewBox="0 0 2980'); // standard orientation
+    expect(standardSvg).not.toContain('id="sld-rotation-group"');
+
+    // Rotate to 90 degrees wide
+    sldUI.setRotation(90);
+    expect(sldUI.getRotation()).toBe(90);
+
+    const rotatedSvg = sldUI.generateWireframeSvg(model);
+    // Base height for this model (e.g. 900px) should now be viewBox width, and 2980 is viewBox height
+    const vbMatch = rotatedSvg.match(/viewBox="0 0 (\d+) (\d+)"/);
+    expect(vbMatch).not.toBeNull();
+    const rotatedW = parseInt(vbMatch![1], 10);
+    const rotatedH = parseInt(vbMatch![2], 10);
+    expect(rotatedH).toBe(2980); // base width became viewBox height
+    expect(rotatedW).toBeLessThan(2980); // base height became viewBox width
+    expect(rotatedSvg).toContain('id="sld-rotation-group"');
+    expect(rotatedSvg).toContain(`transform="rotate(90) translate(0, -${rotatedW})"`);
+
+    // Verify toolbar button state
+    sldUI.render();
+    expect(mockContainer.innerHTML).toContain('id="sld-btn-rotate"');
+    expect(mockContainer.innerHTML).toContain('🔄 90° Wide');
+    expect(mockContainer.innerHTML).toContain('active');
+
+    // Verify standalone SVG export reflects rotated dimensions
+    const standaloneRotated = sldUI.generateStandaloneSvg(model);
+    expect(standaloneRotated).toContain(`width="${rotatedW}"`);
+    expect(standaloneRotated).toContain(`height="${rotatedH}"`);
+    expect(standaloneRotated).toContain(`viewBox="0 0 ${rotatedW} ${rotatedH}"`);
+
+    // Test rotate() cycling (90 -> 270 -> 0)
+    sldUI.rotate();
+    expect(sldUI.getRotation()).toBe(270);
+    sldUI.rotate();
+    expect(sldUI.getRotation()).toBe(0);
+  });
+
+  it('embeds the PEC Cable and Conduit Schedule table directly on the SLD canvas near the MDP with compact 2-row wrapped text', () => {
+    const sys = store.getSelectedSystem()!;
+    const model = buildSldSystemModel(store, sys.id);
+    const sldUI = new SingleLineDiagramUI(null as any, store, sys.id);
+
+    const svg = sldUI.generateWireframeSvg(model);
+
+    // 1. Table structure and container
+    expect(svg).toContain('class="wireframe-pec-cable-schedule"');
+    expect(svg).toContain('id="sld-pec-cable-schedule"');
+    expect(svg).toContain('PEC 2017 CABLE &amp; CONDUIT SCHEDULE');
+
+    // 2. Table Column Headers (wrapped across 2 rows maximum)
+    expect(svg).toContain('CIRCUIT');
+    expect(svg).toContain('TAG');
+    expect(svg).toContain('ROUTE');
+    expect(svg).toContain('VOLTS /');
+    expect(svg).toContain('PHASE');
+    expect(svg).toContain('RATED /');
+    expect(svg).toContain('DESIGN');
+    expect(svg).toContain('OCPD');
+    expect(svg).toContain('RATING');
+    expect(svg).toContain('CONDUCTORS');
+    expect(svg).toContain('(Cu 75°C)');
+    expect(svg).toContain('EGC');
+    expect(svg).toContain('(GND)');
+    expect(svg).toContain('CONDUIT /');
+    expect(svg).toContain('RACEWAY');
+    expect(svg).toContain('PEC');
+    expect(svg).toContain('STD');
+
+    // 3. Compact Circuit rows with 2-row wrapped content
+    expect(svg).toContain('DC-STR-01'); // DC PV strings
+    expect(svg).toContain('INV-01-AC'); // Inverter AC feeder
+    expect(svg).toContain('ACCB-COLL'); // Combiner collector
+    expect(svg).toContain('MDP-SERVICE'); // MDP service entrance
+
+    // 4. Compact 640px width positioned directly under MDP (tableX = 1920, MDP is 2020..2460)
+    expect(svg).toMatch(/transform="translate\(1920,\s*\d+\)"/);
+    expect(svg).toContain('width="640"');
+
+    // 5. Standalone SVG export contains embedded schedule table
+    const standaloneSvg = sldUI.generateStandaloneSvg(model);
+    expect(standaloneSvg).toContain('id="sld-pec-cable-schedule"');
+    expect(standaloneSvg).toContain('PEC 2017 CABLE &amp; CONDUIT SCHEDULE');
+    expect(standaloneSvg).toContain('width="640"');
+
+    // 6. Mathematical non-overlap check: Title Block must be strictly below the schedule table
+    const tableMatch = svg.match(/id="sld-pec-cable-schedule"\s+transform="translate\(\d+,\s*(\d+)\)"/);
+    expect(tableMatch).not.toBeNull();
+    const tableY = parseInt(tableMatch![1], 10);
+
+    const titleBlockMatch = svg.match(/class="wireframe-title-block"\s+transform="translate\(\d+,\s*(\d+)\)"/);
+    expect(titleBlockMatch).not.toBeNull();
+    const titleBlockY = parseInt(titleBlockMatch![1], 10);
+
+    // Title Block Y must be >= tableY + tableHeight + 40
+    expect(titleBlockY).toBeGreaterThanOrEqual(tableY + 170 + 40);
+  });
+
+  it('guarantees no overlap between PEC schedule table and title block with multi-inverters and transformer', () => {
+    // Replicate the exact system from user screenshot: 2 inverters, transformer required, 9 strings
+    const sys2 = store.addSystem('Substation Commercial 100kW', '#10b981', {
+      id: 'inv_dual_xfm',
+      modelName: 'Commercial Dual 50kW',
+      ratedAcPowerKw: 50,
+      inverterCount: 2,
+      mpptCountPerInverter: 4,
+      maxStringsPerMppt: 2,
+      maxDcVoltage: 1100,
+      minMpptVoltage: 200,
+      maxMpptVoltage: 1000,
+      maxDcCurrentPerMppt: 30,
+      maxDcAcRatio: 1.35
+    });
+
+    // Inverter voltage 230V, system voltage 400V -> requires transformer (6 rows in schedule)
+    store.updateSystemInverter(sys2.id, { acVoltage: 230 });
+    store.updateSystem(sys2.id, { systemVoltageV: 400 });
+
+    const vertices = [
+      origin,
+      localMetricToLatLng({ x: 40, y: 0 }, origin),
+      localMetricToLatLng({ x: 40, y: 30 }, origin),
+      localMetricToLatLng({ x: 0, y: 30 }, origin)
+    ];
+    store.addZone(vertices, 'roof', 'Commercial Roof 2', undefined, sys2.id);
+
+    const model = buildSldSystemModel(store, sys2.id);
+    expect(model.transformerDesign.required).toBe(true);
+    expect(model.inverters.length).toBe(2);
+
+    const sldUI = new SingleLineDiagramUI(null as any, store, sys2.id);
+    const svg = sldUI.generateWireframeSvg(model);
+
+    // Extract table Y and Title Block Y
+    const tableMatch = svg.match(/id="sld-pec-cable-schedule"\s+transform="translate\(\d+,\s*(\d+)\)"/);
+    expect(tableMatch).not.toBeNull();
+    const tableY = parseInt(tableMatch![1], 10);
+
+    const titleBlockMatch = svg.match(/class="wireframe-title-block"\s+transform="translate\(\d+,\s*(\d+)\)"/);
+    expect(titleBlockMatch).not.toBeNull();
+    const titleBlockY = parseInt(titleBlockMatch![1], 10);
+
+    // Schedule has 6 rows: DC + INV1 + INV2 + XFM-PRI + XFM-SEC + MDP = 222px table height
+    // Title block MUST be at least 40px below the bottom of the table
+    expect(titleBlockY).toBeGreaterThanOrEqual(tableY + 222 + 40);
+
+    // Verify SVG viewBox height expanded to cleanly accommodate the non-overlapping layout
+    const viewBoxMatch = svg.match(/viewBox="0 0 (\d+) (\d+)"/);
+    expect(viewBoxMatch).not.toBeNull();
+    const vbHeight = parseInt(viewBoxMatch![2], 10);
+    expect(vbHeight).toBeGreaterThanOrEqual(titleBlockY + 140 + 35);
   });
 });

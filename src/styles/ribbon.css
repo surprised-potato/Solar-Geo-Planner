@@ -1,0 +1,1199 @@
+/* Top Tabbed CAD Ribbon */
+.ribbon-bar-container {
+  background: linear-gradient(180deg, #131b2e 0%, #0e1626 100%);
+  border-bottom: 1px solid #233148;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  user-select: none;
+}
+
+/* Row 1: Ribbon Scope & Command Bar */
+.ribbon-scope-bar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid #1e293b;
+  gap: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.ribbon-breadcrumb-trail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ribbon-scope-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.ribbon-scope-pill:hover {
+  border-color: #475569;
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.ribbon-scope-pill.multi-select-active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+}
+
+.ribbon-batch-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fef3c7;
+  padding: 4px 12px;
+  font-size: 11px;
+  border-radius: 6px;
+  margin: 3px 12px 5px 12px;
+}
+
+.ribbon-batch-banner .batch-badge {
+  background: #f59e0b;
+  color: #000;
+  font-weight: 700;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.system-color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.system-color-pill {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.scope-pill-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scope-pill-icon {
+  font-size: 13px;
+}
+
+.ribbon-scope-select {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  max-width: 240px;
+}
+
+.ribbon-scope-select option {
+  background: var(--bg-surface);
+  color: var(--text-main);
+}
+
+.ribbon-pill-btn {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-blue);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ribbon-pill-btn:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: var(--accent-blue);
+  color: #ffffff;
+}
+
+.ribbon-pill-btn.icon-only {
+  padding: 2px 5px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+}
+
+.ribbon-pill-btn.icon-only:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ribbon-pill-btn.danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+.ribbon-pill-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fff;
+}
+
+.ribbon-breadcrumb-arrow {
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ribbon-no-zones {
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 2px 4px;
+}
+
+.ribbon-drafting-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ribbon-draft-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid #334155;
+  color: var(--text-main);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.ribbon-draft-btn:hover {
+  background: #27354f;
+  border-color: var(--accent-blue);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.ribbon-draft-btn.active-pulse {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+  animation: ribbonPulse 1.8s infinite;
+}
+
+@keyframes ribbonPulse {
+  0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+}
+
+.ribbon-scope-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.ribbon-live-kpi-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ribbon-live-kpi-badge .kpi-metric {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.ribbon-live-kpi-badge .kpi-metric.highlight {
+  color: var(--accent-green);
+}
+
+.ribbon-live-kpi-badge .kpi-sep {
+  color: #475569;
+  font-size: 10px;
+}
+
+.ribbon-live-kpi-badge .kpi-mount-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-blue);
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.ribbon-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid #334155;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ribbon-collapse-toggle:hover {
+  background: #27354f;
+  color: var(--text-main);
+  border-color: #475569;
+}
+
+.collapse-icon {
+  transition: transform 0.2s ease;
+}
+
+.ribbon-collapse-toggle.is-collapsed .collapse-icon {
+  transform: rotate(180deg);
+}
+
+/* Row 2: Tabs Strip */
+.ribbon-tabs-strip {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+  background: rgba(11, 15, 25, 0.95);
+  border-bottom: 1px solid #1e293b;
+  overflow-x: auto;
+}
+
+.ribbon-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.15s ease;
+}
+
+.ribbon-tab-item:hover:not(:disabled) {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ribbon-tab-item.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  background: rgba(56, 189, 248, 0.1);
+  font-weight: 600;
+}
+
+.ribbon-tab-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tab-icon {
+  font-size: 14px;
+}
+
+.tab-counter-badge {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.tab-subtext-badge {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-blue);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+/* Collapsed Ribbon Strip */
+.ribbon-collapsed-strip {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  background: rgba(11, 15, 25, 0.9);
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.collapsed-quick-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ribbon-tab-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid #334155;
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.ribbon-tab-pill:hover:not(:disabled) {
+  background: #27354f;
+  color: var(--text-main);
+  border-color: #475569;
+}
+
+.ribbon-tab-pill.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.ribbon-tab-pill:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ribbon-collapsed-hint {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Row 3: Ribbon Tool Pod Panel */
+.ribbon-panel {
+  min-height: 96px;
+  background: linear-gradient(180deg, #0d1322 0%, #080c16 100%);
+  display: flex;
+  align-items: stretch;
+  padding: 8px 16px;
+  gap: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid #1e293b;
+}
+
+.cad-pod {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(23, 32, 51, 0.65);
+  border: 1px solid #28374f;
+  border-radius: 8px;
+  padding: 8px 12px;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cad-pod:hover {
+  border-color: #3b4e6c;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.cad-pod.wide {
+  min-width: 250px;
+}
+
+.cad-pod.fill {
+  flex: 1;
+}
+
+.cad-pod-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.cad-pod-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
+}
+
+.cad-pod-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.cad-pod-tag.highlight {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.cad-pod-tag.accent {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--accent-blue);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.cad-pod-tag.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.cad-pod-tag.pulse-tag {
+  animation: ribbonPulse 1.5s infinite;
+}
+
+.cad-val-chip {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid #334155;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.cad-val-chip.accent {
+  color: var(--accent-blue);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.cad-val-chip.highlight {
+  color: var(--accent-green);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.cad-pod-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.cad-pod-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+.cad-hint-text {
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.cad-mini-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+/* CAD Interactive Controls */
+.cad-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cad-control-row.compact-gap {
+  gap: 6px;
+}
+
+.cad-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cad-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  height: 5px;
+  background: #1e293b;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cad-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.cad-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.9);
+}
+
+.cad-slider::-webkit-slider-thumb:active {
+  transform: scale(1.25);
+}
+
+.cad-input-unit-wrap {
+  display: flex;
+  align-items: center;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 0 6px 0 0;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.cad-input-unit-wrap:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.cad-input-unit-wrap.sm {
+  width: 78px;
+}
+
+.cad-input-unit-wrap.full {
+  width: 100%;
+}
+
+.cad-unit-prefix {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+  padding-left: 6px;
+  user-select: none;
+}
+
+.cad-num-input {
+  width: 48px;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  padding: 4px 4px 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  text-align: right;
+}
+
+.cad-unit-addon {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  user-select: none;
+}
+
+.cad-text-input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  color: var(--text-main);
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.cad-text-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.cad-segmented-control {
+  display: flex;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.cad-seg-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cad-seg-btn:hover {
+  color: var(--text-main);
+}
+
+.cad-seg-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.cad-preset-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cad-preset-pill {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid #334155;
+  border-radius: 3px;
+  color: #94a3b8;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cad-preset-pill:hover {
+  background: #27354f;
+  color: var(--text-main);
+  border-color: #475569;
+}
+
+.cad-preset-pill.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.cad-footprint-tag {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.cad-select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  max-width: 280px;
+}
+
+.cad-select-sm {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 11px;
+  outline: none;
+  max-width: 220px;
+}
+
+.cad-select-xs {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  outline: none;
+  max-width: 170px;
+}
+
+.cad-action-btn {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cad-action-btn:hover {
+  background: #27354f;
+  border-color: var(--accent-blue);
+}
+
+.cad-action-btn.highlight {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--accent-green);
+}
+
+.cad-action-btn.highlight:hover {
+  background: rgba(16, 185, 129, 0.3);
+  color: #ffffff;
+}
+
+.cad-action-btn.energetic {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: 1px solid #fbbf24;
+  color: #000;
+  font-weight: 700;
+}
+
+.cad-action-btn.energetic:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+/* Telemetry HUD & Badge Layouts */
+.cad-telemetry-hud-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.hud-item {
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.hud-item.highlight {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.hud-label {
+  font-size: 9px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.hud-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.hud-val small {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.cad-kpi-chips-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cad-telemetry-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.cad-telemetry-chip.highlight {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-green);
+}
+
+.cad-horizontal-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cad-obstacle-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--text-main);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cad-obstacle-pill .btn-ribbon-remove-ko {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.cad-obstacle-pill .btn-ribbon-remove-ko:hover {
+  color: #fff;
+}
+
+.cad-empty-msg {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Views Tab & Filter Checklist Styles */
+.cad-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+}
+
+.cad-preset-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cad-preset-card:hover {
+  background: rgba(51, 65, 85, 0.9);
+  color: #fff;
+  border-color: #64748b;
+}
+
+.cad-preset-card.active {
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  border-color: #0284c7;
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.35);
+  font-weight: 600;
+}
+
+.cad-preset-card .preset-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.cad-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+
+.cad-check-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 7px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  border-radius: 5px;
+  transition: all 0.12s ease;
+  cursor: pointer;
+}
+
+.cad-check-item:hover {
+  background: rgba(30, 41, 59, 0.65);
+  border-color: #475569;
+}
+
+.cad-check-item.active {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.cad-check-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #e2e8f0;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+}
+
+.cad-check-input {
+  width: 14px;
+  height: 14px;
+  accent-color: #0284c7;
+  cursor: pointer;
+  margin: 0;
+}
+
+.cad-check-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.cad-check-text {
+  font-weight: 500;
+}
+
+.cad-check-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-left: auto;
+}
+
+/* CAD Empty Deck */
+.ribbon-empty-deck {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 24px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.6) 100%);
+  border-bottom: 1px solid #1e293b;
+}
+
+.empty-deck-icon {
+  font-size: 28px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.empty-deck-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.empty-deck-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.empty-deck-desc {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.empty-deck-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.empty-deck-tips {
+  margin-left: auto;
+  font-size: 11px;
+  color: #64748b;
+  border-left: 1px solid #334155;
+  padding-left: 16px;
+}
+
+.sidebar-empty {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 40px;
+  margin-top: 10px;
+}
+
+.sidebar-empty h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.sidebar-empty p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.quick-start-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.tips-card {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.tips-card h4 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--accent-amber);
+}
+
+.tips-card ol {
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zone-list-section {
+  text-align: left;
+  margin-top: 10px;
+}
+
+.zone-list-section h4 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.zone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zone-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.zone-list-item:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-blue);
+}
+
+.zone-list-item.selected {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf840;
+}
+
+.color-badge {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.zone-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.zone-meta small {
+  color: var(--text-dim);
+}

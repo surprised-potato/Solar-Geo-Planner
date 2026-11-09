@@ -135,6 +135,7 @@ export interface SolarSystem {
   acRaceway?: RacewayConfig | null;              // AC Feeder Raceway from Inverter Station to PCC
   systemVoltageV?: number;                       // Nominal AC line voltage at the tapping point / MDP (V)
   hasAcCombiner?: boolean;                       // Whether an AC Combiner & Collector Breaker are used (default true)
+  includeLightningProtection?: boolean;          // Whether D12 (External Lightning Protection & Perimeter Earthing Grid) is included or optional
   mdpTapType?: MdpTapType;                       // 'load_side' (backfed MDP bus) or 'line_side' (supply-side tap before main breaker)
   mdpMainBreakerA?: number;                      // Rating of Main Distribution Panel (MDP) main breaker in Amps
 }
@@ -371,6 +372,54 @@ export interface ProjectBoqState {
   vatPercent: number;      // Default 6%
   items: DupaWorkItem[];   // Source-of-truth DUPA items (D1..D9+)
   lastSyncedAt?: string;
+  includeLightningProtection?: boolean; // Whether D12 (External Lightning Protection & Perimeter Earthing Grid) is included (default false = optional)
+}
+
+export interface CustomSolarResource {
+  sourceName?: string;
+  monthlyGhiKwhPerM2Day?: number[]; // Array of 12 numbers (Jan to Dec)
+  monthlyAmbientTempC?: number[];   // Array of 12 numbers (Jan to Dec)
+  syncedAt?: string;
+}
+
+export type LoadProfileArchetype =
+  | 'commercial_office'    // 8am-5pm peak, low nights & weekends
+  | 'industrial_1shift'    // 7am-4pm weekdays
+  | 'industrial_24_7'      // Flat continuous high demand
+  | 'retail_commercial'    // 10am-9pm 7 days a week
+  | 'school_institution'   // 7am-5pm weekdays, holiday dips
+  | 'hospital_healthcare'  // High continuous base load with daytime clinical peaks
+  | 'residential_standard' // Dual peak: 6-9am morning & 6-10pm evening
+  | 'custom';
+
+export interface HourlyLoadCurve {
+  values: number[]; // length 24, index 0 = 00:00-01:00 to index 23 = 23:00-24:00
+}
+
+export interface MonthlyLoadRecord {
+  month: number;           // 0 = Jan, 11 = Dec
+  monthName: string;       // 'Jan' .. 'Dec'
+  daysInMonth: number;     // 28 - 31
+  consumptionKwh: number;  // Total monthly energy consumption (kWh)
+  peakDemandKw?: number;   // Peak demand registered on meter (kW)
+  energyCostPhp?: number;  // Optional electricity bill amount
+}
+
+export interface FacilityLoadProfile {
+  id: string;
+  name: string;
+  systemId?: string;       // 'all' / undefined = whole project; or specific system ID
+  archetype: LoadProfileArchetype;
+  annualKwh: number;       // Sum of 12 months consumption (kWh)
+  monthlyBreakdown: MonthlyLoadRecord[]; // Exact 12 elements (Jan to Dec)
+  hasWeekendProfile: boolean;
+  defaultDailyCurve: number[];  // 24 hourly weights (0..23)
+  weekendDailyCurve?: number[]; // 24 hourly weights for weekend if enabled
+  sourceType: 'preset' | 'manual' | 'csv_monthly' | 'csv_hourly' | 'csv_8760';
+  sourceFileName?: string;
+  averageTariffRatePhp?: number; // e.g. 10.50 ₱/kWh
+  notes?: string;
+  updatedAt: string;
 }
 
 export interface ProjectData {
@@ -389,6 +438,8 @@ export interface ProjectData {
   homerunRaceway?: RacewayConfig | null; // Shared system/project homerun trunk
   stringTraverseDirection?: StringTraverseDirection; // Global / project-level default traversal preference
   boqData?: ProjectBoqState;
+  customSolarResource?: CustomSolarResource | null;
+  loadProfile?: FacilityLoadProfile | null;
 }
 
 // Datasheet Default: ZNShine 600W Bifacial (https://energiasirius.com/wp-content/uploads/2025/01/Datasheet-ZN-SHine-600W-Bifacial.pdf)

@@ -1,0 +1,121 @@
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background-color: var(--accent-blue);
+  color: #0b0f19;
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-blue-hover);
+}
+
+.btn-secondary {
+  background-color: var(--bg-surface);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-surface-hover);
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-muted);
+}
+
+.btn-outline:hover {
+  border-color: var(--text-muted);
+  color: var(--text-main);
+}
+
+.btn-outline.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: var(--accent-red);
+}
+
+.btn-outline.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-outline.warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--accent-amber);
+}
+
+.btn-outline.active,
+.btn-primary.active,
+.btn-secondary.active {
+  box-shadow: 0 0 0 2px var(--accent-amber);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.btn-ghost:hover {
+  text-decoration: underline;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.btn-xs {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.btn-icon:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+}
+
+.btn-icon.danger:hover {
+  color: var(--accent-red);
+}
+
+/* Map Tooltips */
+.solar-tooltip {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--border-light) !important;
+  color: var(--text-main) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650 !important;
+}

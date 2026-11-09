@@ -1,6 +1,9 @@
 import L from 'leaflet';
 import { ProjectStore } from '../store/projectStore';
 import { MapController } from '../map/mapController';
+import { SolarYieldModalUI } from './solarYieldModal';
+import { LoadProfileModalUI } from './loadProfileModal';
+import { escapeHtml } from '../utils/html';
 
 export class InspectorUI {
   private container: HTMLElement;
@@ -9,13 +12,31 @@ export class InspectorUI {
   private isMinimized: boolean = false;
   private lastScrollTop: number = 0;
   private lastClickedDirection: string | null = null;
+  private solarYieldModal: SolarYieldModalUI;
+  private loadProfileModal: LoadProfileModalUI;
+  private onOpenSimulationWorkspace?: (systemId?: string) => void;
 
-  constructor(containerId: string, store: ProjectStore, mapController?: MapController) {
+  constructor(
+    containerId: string,
+    store: ProjectStore,
+    mapController?: MapController,
+    onOpenSimulationWorkspace?: (systemId?: string) => void
+  ) {
     const el = document.getElementById(containerId);
     if (!el) throw new Error(`Element #${containerId} not found`);
     this.container = el;
     this.store = store;
     this.mapController = mapController;
+    this.onOpenSimulationWorkspace = onOpenSimulationWorkspace;
+    this.solarYieldModal = new SolarYieldModalUI(
+      store,
+      (sysId) => this.loadProfileModal.open(sysId),
+      (sysId) => {
+        this.solarYieldModal.close();
+        this.onOpenSimulationWorkspace?.(sysId);
+      }
+    );
+    this.loadProfileModal = new LoadProfileModalUI(store, (sysId) => this.solarYieldModal.open(sysId));
 
     // Prevent Leaflet map from capturing wheel, touch, or click events inside inspector
     L.DomEvent.disableScrollPropagation(this.container);
@@ -49,6 +70,8 @@ export class InspectorUI {
     const sysSummary = currentSystem ? this.store.getSystemSummary(currentSystem.id) : null;
     const projectSummary = this.store.getSystemSummary();
     const sysCable = currentSystem ? this.store.getSystemCableSummary(currentSystem.id) : null;
+    const sysYield = this.store.getSolarYieldEstimate(currentSystem?.id);
+    const projectYield = this.store.getSolarYieldEstimate();
 
     // Collapsed / Minimized HUD Pill State
     if (this.isMinimized) {
@@ -110,7 +133,7 @@ export class InspectorUI {
           <div class="scope-name-banner">
             <div class="system-name-tag">
               <span class="scope-tag-label">ELECTRICAL SCOPE</span>
-              <strong class="system-title">${currentSystem?.name || 'Default System'}</strong>
+              <strong class="system-title">${escapeHtml(currentSystem?.name || 'Default System')}</strong>
             </div>
             <span class="system-arrays-count">${linkedZones.length} ${linkedZones.length === 1 ? 'Array' : 'Arrays'}</span>
           </div>
@@ -181,7 +204,7 @@ export class InspectorUI {
                         <input type="checkbox" class="chk-select-zone" data-zone-id="${z.id}" ${this.store.isZoneSelected(z.id) ? 'checked' : ''} title="Toggle selection for batch editing" />
                         <span class="array-mount-badge">${z.config.mountType === 'ground' ? '🌱' : '🏠'}</span>
                         <div class="array-item-info">
-                          <span class="array-name">${z.name}</span>
+                          <span class="array-name">${escapeHtml(z.name)}</span>
                           <small class="array-meta">${z.activePanelCount} panels • ${z.totalKwp} kWp • Setback: ${z.config.setbackM}m</small>
                         </div>
                       </div>
@@ -260,8 +283,25 @@ export class InspectorUI {
               }
               <div class="stat-row">
                 <span>Estimated Annual Yield:</span>
-                <strong style="color: var(--accent-blue);">${Math.round(projectSummary.totalKwp * 1350).toLocaleString()} kWh/yr</strong>
+                <strong style="color: var(--accent-blue);">${sysYield.annualYieldKwh.toLocaleString()} kWh/yr</strong>
               </div>
+              <div class="stat-row">
+                <span>Specific Yield:</span>
+                <strong style="color: var(--accent-green);">${sysYield.specificYieldKwhPerKwp.toLocaleString()} kWh/kWp/yr</strong>
+              </div>
+              <div class="stat-row">
+                <span>Performance Ratio:</span>
+                <strong class="${sysYield.performanceRatio >= 80 ? 'text-accent-green' : 'text-accent-amber'}">${sysYield.performanceRatio}%</strong>
+              </div>
+              <button type="button" id="btn-open-solar-yield-analytics" class="btn-sm btn-outline" style="width: 100%; margin-top: 10px; justify-content: center; gap: 6px; font-weight: 600;">
+                📊 Solar Yield & Generation Analytics
+              </button>
+              <button type="button" id="btn-open-simulation-modal" class="btn-sm btn-outline" style="width: 100%; margin-top: 6px; justify-content: center; gap: 6px; font-weight: 600; color: #10b981; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.08);" title="Simulate Solar + Facility Load Matching, RE Share, and Import/Export Balance">
+                ⚡ Solar + Load Simulation (RE Share)
+              </button>
+              <button type="button" id="btn-open-load-profile-modal" class="btn-sm btn-outline" style="width: 100%; margin-top: 6px; justify-content: center; gap: 6px; font-weight: 600; color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08);" title="Record monthly utility electric bills and 24-hour diurnal demand curves">
+                🏢 Existing Load Profile ${this.store.getLoadProfile() ? `(${((this.store.getLoadProfile()?.annualKwh || 0) / 1000).toFixed(0)}k kWh/yr)` : '(Configure)'}
+              </button>
             </div>
           </div>
 
@@ -279,6 +319,10 @@ export class InspectorUI {
               <div class="stat-row">
                 <span>Total Site Arrays:</span>
                 <strong>${projectSummary.totalZones} (${projectSummary.totalActivePanels} panels)</strong>
+              </div>
+              <div class="stat-row">
+                <span>Total Site Annual Yield:</span>
+                <strong style="color: var(--accent-blue);">${projectYield.annualYieldKwh.toLocaleString()} kWh/yr</strong>
               </div>
             </div>
           </div>
@@ -335,7 +379,7 @@ export class InspectorUI {
           <div class="banner-quick-actions">
             <button type="button" id="btn-copy-panel-id" class="btn-xs btn-outline" title="Copy panel ID to clipboard">📋 Copy</button>
             <button type="button" id="btn-inspector-zoom-zone" class="btn-xs btn-outline" style="border-color: ${zone?.color || '#38bdf8'};" title="Zoom map to fit this array">
-              ${zone?.config.mountType === 'ground' ? '🌱' : '🏠'} ${zone?.name || panel.zoneId}
+              ${zone?.config.mountType === 'ground' ? '🌱' : '🏠'} ${escapeHtml(zone?.name || panel.zoneId)}
             </button>
           </div>
         </div>
@@ -351,13 +395,13 @@ export class InspectorUI {
             <div class="pod-body-table">
               <div class="stat-row">
                 <span>Model:</span>
-                <strong style="color: var(--accent-amber);">${mod?.name || 'Standard 600W Bifacial'}</strong>
+                <strong style="color: var(--accent-amber);">${escapeHtml(mod?.name || 'Standard 600W Bifacial')}</strong>
               </div>
               <div class="stat-row">
                 <span>System:</span>
                 <span class="system-inline-pill" style="border-color: ${system?.color || '#0284c7'};">
                   <span class="system-color-dot" style="background-color: ${system?.color || '#0284c7'};"></span>
-                  ${system?.name || panel.systemId}
+                  ${escapeHtml(system?.name || panel.systemId)}
                 </span>
               </div>
               <div class="stat-row">
@@ -637,11 +681,39 @@ export class InspectorUI {
   }
 
   private attachScopeListeners(systemId?: string): void {
-    document.getElementById('btn-minimize-inspector')?.addEventListener('click', () => {
+    this.container.querySelector('#btn-minimize-inspector')?.addEventListener('click', () => {
       this.toggleMinimize();
     });
 
-    document.getElementById('btn-scope-zoom-inverter')?.addEventListener('click', () => {
+    const btnYield = this.container.querySelector<HTMLButtonElement>('#btn-open-solar-yield-analytics');
+    if (btnYield) {
+      btnYield.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.solarYieldModal.open(systemId, 'yield');
+      });
+    }
+
+    const btnSim = this.container.querySelector<HTMLButtonElement>('#btn-open-simulation-modal');
+    if (btnSim) {
+      btnSim.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.onOpenSimulationWorkspace) {
+          this.onOpenSimulationWorkspace(systemId);
+        } else {
+          this.solarYieldModal.open(systemId, 'simulation');
+        }
+      });
+    }
+
+    const btnLoad = this.container.querySelector<HTMLButtonElement>('#btn-open-load-profile-modal');
+    if (btnLoad) {
+      btnLoad.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.loadProfileModal.open(systemId);
+      });
+    }
+
+    this.container.querySelector('#btn-scope-zoom-inverter')?.addEventListener('click', () => {
       if (systemId) {
         this.mapController?.zoomToInverter(systemId);
       }
@@ -842,5 +914,13 @@ export class InspectorUI {
       orderInput.value = String(cur + 1);
       syncStringing();
     });
+  }
+
+  public openSolarYieldModal(systemId?: string): void {
+    this.solarYieldModal.open(systemId, 'yield');
+  }
+
+  public openLoadProfileModal(systemId?: string): void {
+    this.loadProfileModal.open(systemId);
   }
 }

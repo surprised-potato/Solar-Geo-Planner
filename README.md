@@ -94,5 +94,20 @@ npx firebase-tools deploy --only hosting
 
 ---
 
+## 🔐 Cloud Sync, Accounts & Security
+
+Cloud sync requires **Google sign-in**. Without signing in, the app works fully offline and saves to this device only.
+
+- Projects are **private to their owner** (`ownerUid`). The owner can share a project with other Google accounts via **📁 → Share Project…**; members can view and edit, but only the owner can change sharing or delete.
+- Access is enforced by [`firestore.rules`](firestore.rules); run its tests against the emulator with `npm run test:rules` (needs Java and the Firebase CLI).
+- All imported / synced project data is sanitized (`src/utils/sanitizeProjectData.ts`) and user text is escaped with `escapeHtml` (`src/utils/html.ts`) before it is rendered.
+
+**One-time Firebase setup**
+1. Firebase console → Authentication → Sign-in method → enable **Google**. Make sure your hosting domain is listed under *Authorized domains*.
+2. Deploy the rules: `firebase deploy --only firestore:rules`.
+3. Projects created before this change have no `ownerUid` and become inaccessible. To keep one, open it in the Firestore console and add a string field `ownerUid` set to your Firebase Auth UID.
+
+---
+
 ## 📦 Repository
 Source code on GitHub: [surprised-potato/Solar-Geo-Planner](https://github.com/surprised-potato/Solar-Geo-Planner)

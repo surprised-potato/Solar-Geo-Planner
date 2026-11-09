@@ -3,9 +3,11 @@ import {
   exportBoqAndDupaCsv,
   exportCostedBomCsv,
   extractCostedBom,
-  getBoqProjectTotal
+  getBoqProjectTotal,
+  normalizeDupaQuotes
 } from '../geo/boqCalculator';
 import { DupaWorkItem } from '../types/solar';
+import { escapeHtml } from '../utils/html';
 
 export type BoqViewTab = 'boq' | 'bom' | string;
 
@@ -51,15 +53,19 @@ export class BoqAndDupaUI {
 
   private getItemShortTitle(itemNo: string): string {
     const titles: Record<string, string> = {
-      D1: 'Mob / Demob',
+      D1: 'Mob / Safety',
       D2: 'Mounting Structure',
-      D3: 'Raceways & Trays',
-      D4: 'PV Panels',
-      D5: 'DC Cabling',
-      D6: 'Grounding & LP',
-      D7: 'Testing & Comm.',
-      D8: 'Inverters & BOS',
-      D9: 'AC Feeder Runs'
+      D3: 'DC Trays & Raceways',
+      D4: 'PV Modules',
+      D5: 'DC String Cabling',
+      D6: 'DC Protections',
+      D7: 'Inverters & Comms',
+      D8: 'AC Combiner Panel',
+      D9: 'Transformer Station',
+      D10: 'Main Dist. Panel (MDP)',
+      D11: 'AC Feeder Runs',
+      D12: 'Grounding & LP',
+      D13: 'Testing & Handover'
     };
     return titles[itemNo] || itemNo;
   }
@@ -74,7 +80,11 @@ export class BoqAndDupaUI {
       D6: '#ec4899',
       D7: '#f97316',
       D8: '#6366f1',
-      D9: '#14b8a6'
+      D9: '#8b5cf6',
+      D10: '#3b82f6',
+      D11: '#14b8a6',
+      D12: '#eab308',
+      D13: '#22c55e'
     };
     return colors[itemNo] || '#38bdf8';
   }
@@ -104,7 +114,7 @@ export class BoqAndDupaUI {
             </label>
             <select id="boq-system-select" class="input-select sm" style="padding: 4px 8px; font-size: 12px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #334155;">
               <option value="all" ${this.currentSystemId === 'all' ? 'selected' : ''}>🌐 All Systems (${systems.length})</option>
-              ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>⚡ ${s.name}</option>`).join('')}
+              ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>⚡ ${escapeHtml(s.name)}</option>`).join('')}
             </select>
 
             <!-- Global DPWH Markups -->
@@ -127,6 +137,9 @@ export class BoqAndDupaUI {
           </div>
 
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button id="boq-btn-toggle-lightning" class="btn btn-xs btn-outline" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-color: ${boqState.includeLightningProtection ? '#10b981' : '#f59e0b'}; color: ${boqState.includeLightningProtection ? '#10b981' : '#f59e0b'};" title="Toggle Lightning & Main Grounding Protection (D12) as optional or included">
+              <span>⚡</span> LPS (D12): ${boqState.includeLightningProtection ? 'Included' : 'Optional (₱0)'}
+            </button>
             <button id="boq-btn-sync-cad" class="btn btn-xs btn-outline primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Re-sync quantities from Spatial CAD and SLD while preserving custom unit prices">
               <span>🔄</span> Sync CAD &amp; SLD
             </button>
@@ -182,7 +195,7 @@ export class BoqAndDupaUI {
             const isTabActive = this.activeTab === it.itemNo;
             const itemColor = this.getItemColor(it.itemNo);
             return `
-              <button class="boq-tab-btn ${isTabActive ? 'active' : ''}" data-boq-tab="${it.itemNo}" title="${it.description}" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 11px; font-weight: 500; border-radius: 6px 6px 0 0; border: 1px solid ${isTabActive ? itemColor : 'transparent'}; border-bottom: none; background: ${isTabActive ? '#0f172a' : 'transparent'}; color: ${isTabActive ? '#fff' : '#94a3b8'}; cursor: pointer; white-space: nowrap; transition: all 0.15s;">
+              <button class="boq-tab-btn ${isTabActive ? 'active' : ''}" data-boq-tab="${it.itemNo}" title="${escapeHtml(it.description)}" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 11px; font-weight: 500; border-radius: 6px 6px 0 0; border: 1px solid ${isTabActive ? itemColor : 'transparent'}; border-bottom: none; background: ${isTabActive ? '#0f172a' : 'transparent'}; color: ${isTabActive ? '#fff' : '#94a3b8'}; cursor: pointer; white-space: nowrap; transition: all 0.15s;">
                 <span class="badge" style="font-size: 10px; padding: 1px 5px; background: ${itemColor}; color: #000; font-weight: bold; border-radius: 3px;">${it.itemNo}</span>
                 <span>${this.getItemShortTitle(it.itemNo)}</span>
               </button>
@@ -259,9 +272,16 @@ export class BoqAndDupaUI {
                     <td style="padding: 10px 12px; font-weight: bold; color: ${itemColor};">
                       <span class="badge" style="background: ${itemColor}; color: #000; font-size: 11px; padding: 2px 6px; font-weight: bold; border-radius: 4px;">${it.itemNo}</span>
                     </td>
-                    <td style="padding: 10px 12px; color: #94a3b8;">${it.category}</td>
+                    <td style="padding: 10px 12px; color: #94a3b8;">${escapeHtml(it.category)}</td>
                     <td style="padding: 10px 12px; font-weight: 500;">
-                      <div style="color: #f8fafc;">${it.description}</div>
+                      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span style="color: #f8fafc;">${escapeHtml(it.description)}</span>
+                        ${it.itemNo === 'D12' ? `
+                          <button class="btn btn-xs btn-outline btn-toggle-d12" style="padding: 1px 6px; font-size: 10px; border-radius: 4px; ${it.quantity > 0 ? 'border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1);' : 'border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,0.1);'}" title="Toggle between Optional (Excluded from Base BOQ) and Included">
+                            ${it.quantity > 0 ? '✓ Included' : '+ Optional (Click to Include)'}
+                          </button>
+                        ` : ''}
+                      </div>
                       <small style="color: #64748b; font-size: 11px;">Duration: ${it.durationDays} days &bull; Materials: ${it.materials.length} line items</small>
                     </td>
                     <td style="padding: 10px 12px; text-align: right; font-weight: bold;">${it.quantity.toLocaleString()}</td>
@@ -321,7 +341,7 @@ export class BoqAndDupaUI {
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <div style="display: flex; align-items: center; gap: 4px;">
               <span style="font-size: 12px; color: #94a3b8;">🔍 Search:</span>
-              <input type="search" id="bom-search-input" value="${this.bomSearchQuery}" placeholder="Filter material description, category..." style="padding: 4px 8px; font-size: 11px; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 4px; width: 220px;" />
+              <input type="search" id="bom-search-input" value="${escapeHtml(this.bomSearchQuery)}" placeholder="Filter material description, category..." style="padding: 4px 8px; font-size: 11px; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 4px; width: 220px;" />
             </div>
 
             <div style="display: flex; align-items: center; gap: 4px;">
@@ -370,9 +390,9 @@ export class BoqAndDupaUI {
                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.12s;">
                       <td style="padding: 6px 10px; font-weight: bold; color: #94a3b8; font-family: monospace;">${item.itemNo}</td>
                       <td style="padding: 6px 10px; color: #cbd5e1; font-size: 11px;">
-                        <span style="display: inline-block; padding: 1px 6px; background: rgba(255,255,255,0.05); border-radius: 3px;">${item.category}</span>
+                        <span style="display: inline-block; padding: 1px 6px; background: rgba(255,255,255,0.05); border-radius: 3px;">${escapeHtml(item.category)}</span>
                       </td>
-                      <td style="padding: 6px 10px; font-weight: 500; color: #f8fafc;">${item.description}</td>
+                      <td style="padding: 6px 10px; font-weight: 500; color: #f8fafc;">${escapeHtml(item.description)}</td>
                       <td style="padding: 6px 10px;">
                         <button class="btn btn-xs btn-outline btn-jump-dupa" data-item-no="${item.dupaItemNo}" style="padding: 1px 6px; font-size: 10px; border-color: ${itemColor}; color: ${itemColor};" title="Jump to ${item.dupaItemNo} DUPA sheet">
                           ${item.dupaItemNo}
@@ -410,6 +430,24 @@ export class BoqAndDupaUI {
     return `
       <div class="dupa-dedicated-sheet" style="display: flex; flex-direction: column; gap: 14px;">
         
+        ${it.itemNo === 'D12' ? `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 8px; background: ${it.quantity > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)'}; border: 1px solid ${it.quantity > 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'};">
+            <div>
+              <strong style="color: ${it.quantity > 0 ? '#10b981' : '#f59e0b'}; display: flex; align-items: center; gap: 6px; font-size: 13px;">
+                <span>⚡</span> Scope Option: Grounding &amp; Lightning Protection System
+              </strong>
+              <p style="margin: 3px 0 0; font-size: 11px; color: #94a3b8;">
+                ${it.quantity > 0
+                  ? 'This item is currently INCLUDED in the base contract estimate (quantity = 1 system).'
+                  : 'This item is currently OPTIONAL / EXCLUDED from base BOQ (facility has existing earthing grid / LPS). Note: Dedicated DC-side earthing rod and bonding remain active under Item D6.'}
+              </p>
+            </div>
+            <button class="btn btn-xs btn-toggle-d12" style="background: ${it.quantity > 0 ? '#f59e0b' : '#10b981'}; color: #000; font-weight: bold; padding: 5px 12px; border-radius: 4px; cursor: pointer; white-space: nowrap; margin-left: 12px;">
+              ${it.quantity > 0 ? 'Exclude from Base BOQ' : 'Include in Base BOQ'}
+            </button>
+          </div>
+        ` : ''}
+
         <!-- Sheet Header Banner -->
         <div style="background: #0f172a; border: 1px solid ${itemColor}40; border-top: 4px solid ${itemColor}; border-radius: 8px; padding: 14px 16px;">
           <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
@@ -418,9 +456,9 @@ export class BoqAndDupaUI {
                 ${it.itemNo}
               </span>
               <div>
-                <h3 style="margin: 0; font-size: 16px; font-weight: bold; color: #f8fafc;">${it.description}</h3>
+                <h3 style="margin: 0; font-size: 16px; font-weight: bold; color: #f8fafc;">${escapeHtml(it.description)}</h3>
                 <div style="font-size: 11px; color: #94a3b8; margin-top: 3px;">
-                  Category: <strong style="color: #cbd5e1;">${it.category}</strong> &bull; DPWH Detailed Unit Price Analysis Sheet
+                  Category: <strong style="color: #cbd5e1;">${escapeHtml(it.category)}</strong> &bull; DPWH Detailed Unit Price Analysis Sheet
                 </div>
               </div>
             </div>
@@ -448,19 +486,19 @@ export class BoqAndDupaUI {
           <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px;">
             <label style="display: flex; align-items: center; gap: 4px;">
               <span style="color: #94a3b8;">Work Description:</span>
-              <input type="text" class="input-tbl-text input-dupa-desc" data-item-no="${it.itemNo}" value="${it.description}" style="width: 320px; font-weight: 600;" />
+              <input type="text" class="input-tbl-text input-dupa-desc" data-item-no="${it.itemNo}" value="${escapeHtml(it.description)}" style="width: 320px; font-weight: 600;" />
             </label>
             <label style="display: flex; align-items: center; gap: 4px;">
               <span style="color: #94a3b8;">Duration (days):</span>
-              <input type="number" class="input-tbl-num input-dupa-duration" data-item-no="${it.itemNo}" value="${it.durationDays}" min="1" max="365" style="width: 50px;" />
+              <input type="number" class="input-tbl-num input-dupa-duration" data-item-no="${it.itemNo}" value="${it.durationDays}" min="0" max="365" style="width: 50px;" />
             </label>
             <label style="display: flex; align-items: center; gap: 4px;">
               <span style="color: #94a3b8;">Work Quantity:</span>
-              <input type="number" class="input-tbl-num input-dupa-qty" data-item-no="${it.itemNo}" value="${it.quantity}" min="1" step="1" style="width: 70px;" />
+              <input type="number" class="input-tbl-num input-dupa-qty" data-item-no="${it.itemNo}" value="${it.quantity}" min="0" step="1" style="width: 70px;" />
             </label>
             <label style="display: flex; align-items: center; gap: 4px;">
               <span style="color: #94a3b8;">Unit:</span>
-              <input type="text" class="input-tbl-text input-dupa-unit" data-item-no="${it.itemNo}" value="${it.unit}" style="width: 50px;" />
+              <input type="text" class="input-tbl-text input-dupa-unit" data-item-no="${it.itemNo}" value="${escapeHtml(it.unit)}" style="width: 50px;" />
             </label>
           </div>
         </div>
@@ -490,13 +528,13 @@ export class BoqAndDupaUI {
               ${it.materials.length === 0 ? `<tr><td colspan="6" style="padding: 10px; color: #64748b; font-style: italic;">No direct materials required for this work item.</td></tr>` : it.materials.map((m, mIdx) => `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-mat-desc" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${m.description}" style="width: 100%;" />
+                    <input type="text" class="input-tbl-text input-mat-desc" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${escapeHtml(m.description)}" style="width: 100%;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-mat-qty" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${m.quantity}" step="any" min="0" style="width: 80px; text-align: right;" />
                   </td>
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-mat-unit" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${m.unit}" style="width: 50px;" />
+                    <input type="text" class="input-tbl-text input-mat-unit" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${escapeHtml(m.unit)}" style="width: 50px;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-mat-cost" data-item-no="${it.itemNo}" data-row-idx="${mIdx}" value="${m.unitCostPhp}" step="any" min="0" style="width: 100px; text-align: right; font-family: monospace;" />
@@ -544,7 +582,7 @@ export class BoqAndDupaUI {
               ${it.labor.length === 0 ? `<tr><td colspan="7" style="padding: 10px; color: #64748b; font-style: italic;">No direct labor specified for this work item.</td></tr>` : it.labor.map((l, lIdx) => `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-lab-desc" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${l.description}" style="width: 100%;" />
+                    <input type="text" class="input-tbl-text input-lab-desc" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${escapeHtml(l.description)}" style="width: 100%;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-lab-count" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${l.count}" min="1" style="width: 55px; text-align: right;" />
@@ -553,7 +591,7 @@ export class BoqAndDupaUI {
                     <input type="number" class="input-tbl-num input-lab-days" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${l.days}" min="1" style="width: 55px; text-align: right;" />
                   </td>
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-lab-unit" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${l.unit}" style="width: 44px;" />
+                    <input type="text" class="input-tbl-text input-lab-unit" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${escapeHtml(l.unit)}" style="width: 44px;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-lab-rate" data-item-no="${it.itemNo}" data-row-idx="${lIdx}" value="${l.ratePerDayPhp}" step="50" min="0" style="width: 100px; text-align: right; font-family: monospace;" />
@@ -601,7 +639,7 @@ export class BoqAndDupaUI {
               ${it.equipment.length === 0 ? `<tr><td colspan="7" style="padding: 10px; color: #64748b; font-style: italic;">No heavy equipment rented for this work item.</td></tr>` : it.equipment.map((e, eIdx) => `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-eq-desc" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${e.description}" style="width: 100%;" />
+                    <input type="text" class="input-tbl-text input-eq-desc" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${escapeHtml(e.description)}" style="width: 100%;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-eq-count" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${e.count}" min="1" style="width: 55px; text-align: right;" />
@@ -610,7 +648,7 @@ export class BoqAndDupaUI {
                     <input type="number" class="input-tbl-num input-eq-days" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${e.days}" min="1" style="width: 55px; text-align: right;" />
                   </td>
                   <td style="padding: 6px 10px;">
-                    <input type="text" class="input-tbl-text input-eq-unit" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${e.unit}" style="width: 44px;" />
+                    <input type="text" class="input-tbl-text input-eq-unit" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${escapeHtml(e.unit)}" style="width: 44px;" />
                   </td>
                   <td style="padding: 6px 10px; text-align: right;">
                     <input type="number" class="input-tbl-num input-eq-rate" data-item-no="${it.itemNo}" data-row-idx="${eIdx}" value="${e.ratePerDayPhp}" step="50" min="0" style="width: 100px; text-align: right; font-family: monospace;" />
@@ -762,6 +800,15 @@ export class BoqAndDupaUI {
       this.render();
     });
 
+    // 6b. Toggle Optional Lightning & Grounding (D12)
+    this.container.querySelectorAll('#boq-btn-toggle-lightning, .btn-toggle-d12').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.store.toggleLightningProtection();
+        this.render();
+      });
+    });
+
     // 7. Reset Benchmark Rates
     this.container.querySelector('#boq-btn-reset-rates')?.addEventListener('click', () => {
       if (confirm('Reset all DUPA material unit costs, labor daily rates, and equipment rates to standard DPWH benchmarks?')) {
@@ -814,7 +861,7 @@ export class BoqAndDupaUI {
       input.addEventListener('change', (e) => {
         const itemNo = (e.currentTarget as HTMLElement).getAttribute('data-item-no');
         if (itemNo) {
-          const val = (e.currentTarget as HTMLInputElement).value;
+          const val = normalizeDupaQuotes((e.currentTarget as HTMLInputElement).value);
           this.store.updateDupaWorkItem(itemNo, (it) => ({ ...it, description: val }));
           this.render();
         }
@@ -836,7 +883,8 @@ export class BoqAndDupaUI {
       input.addEventListener('change', (e) => {
         const itemNo = (e.currentTarget as HTMLElement).getAttribute('data-item-no');
         if (itemNo) {
-          const val = parseFloat((e.currentTarget as HTMLInputElement).value) || 1;
+          const parsed = parseFloat((e.currentTarget as HTMLInputElement).value);
+          const val = isNaN(parsed) ? 0 : Math.max(0, parsed);
           this.store.updateDupaWorkItem(itemNo, (it) => ({ ...it, quantity: val }));
           this.render();
         }
@@ -847,7 +895,7 @@ export class BoqAndDupaUI {
       input.addEventListener('change', (e) => {
         const itemNo = (e.currentTarget as HTMLElement).getAttribute('data-item-no');
         if (itemNo) {
-          const val = (e.currentTarget as HTMLInputElement).value;
+          const val = normalizeDupaQuotes((e.currentTarget as HTMLInputElement).value);
           this.store.updateDupaWorkItem(itemNo, (it) => ({ ...it, unit: val }));
           this.render();
         }
@@ -866,8 +914,8 @@ export class BoqAndDupaUI {
             if (m) {
               if (target.classList.contains('input-mat-cost')) m.unitCostPhp = parseFloat(target.value) || 0;
               if (target.classList.contains('input-mat-qty')) m.quantity = parseFloat(target.value) || 0;
-              if (target.classList.contains('input-mat-desc')) m.description = target.value;
-              if (target.classList.contains('input-mat-unit')) m.unit = target.value;
+              if (target.classList.contains('input-mat-desc')) m.description = normalizeDupaQuotes(target.value);
+              if (target.classList.contains('input-mat-unit')) m.unit = normalizeDupaQuotes(target.value);
             }
             return it;
           });
@@ -902,7 +950,7 @@ export class BoqAndDupaUI {
               id: `m_${Date.now()}`,
               description: 'New Material Item',
               quantity: 1,
-              unit: 'lot',
+              unit: 'set',
               unitCostPhp: 1000,
               amountPhp: 1000
             });
@@ -923,10 +971,10 @@ export class BoqAndDupaUI {
           this.store.updateDupaWorkItem(itemNo, (it) => {
             const l = it.labor[rowIdx];
             if (l) {
-              if (target.classList.contains('input-lab-desc')) l.description = target.value;
+              if (target.classList.contains('input-lab-desc')) l.description = normalizeDupaQuotes(target.value);
               if (target.classList.contains('input-lab-count')) l.count = parseInt(target.value, 10) || 1;
               if (target.classList.contains('input-lab-days')) l.days = parseInt(target.value, 10) || 1;
-              if (target.classList.contains('input-lab-unit')) l.unit = target.value;
+              if (target.classList.contains('input-lab-unit')) l.unit = normalizeDupaQuotes(target.value);
               if (target.classList.contains('input-lab-rate')) l.ratePerDayPhp = parseFloat(target.value) || 0;
             }
             return it;
@@ -984,10 +1032,10 @@ export class BoqAndDupaUI {
           this.store.updateDupaWorkItem(itemNo, (it) => {
             const eq = it.equipment[rowIdx];
             if (eq) {
-              if (target.classList.contains('input-eq-desc')) eq.description = target.value;
+              if (target.classList.contains('input-eq-desc')) eq.description = normalizeDupaQuotes(target.value);
               if (target.classList.contains('input-eq-count')) eq.count = parseInt(target.value, 10) || 1;
               if (target.classList.contains('input-eq-days')) eq.days = parseInt(target.value, 10) || 1;
-              if (target.classList.contains('input-eq-unit')) eq.unit = target.value;
+              if (target.classList.contains('input-eq-unit')) eq.unit = normalizeDupaQuotes(target.value);
               if (target.classList.contains('input-eq-rate')) eq.ratePerDayPhp = parseFloat(target.value) || 0;
             }
             return it;
