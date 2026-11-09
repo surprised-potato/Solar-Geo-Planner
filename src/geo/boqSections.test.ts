@@ -173,3 +173,47 @@ describe('multi-farm BOQ', () => {
     });
   });
 });
+
+describe('XLSX export', () => {
+  it('writes BOQ, BOM and one DUPA sheet per item with valid parts', async () => {
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const { buildBoqXlsx, uniqueSheetName } = await import('./boq/xlsxExport');
+    try { localStorage.clear(); } catch { /* no localStorage */ }
+    const store = new ProjectStore();
+    store.clearAll();
+    const [a] = store.addPoultryHouses({ ...base, count: 2 });
+    store.setFarmBess(a.sectionId, { capacityMwh: 1, powerMw: 0.5, chemistry: 'LFP' });
+    store.setInterconnection({ lineLengthKm: 2, poleSpanM: 40, voltageKv: 13.2 });
+    const boq = store.getBoqState(undefined, true);
+
+    const files = unzipSync(buildBoqXlsx('Twin & "Taurus" <Test>', boq, store.sections));
+    const sheetCount = 2 + boq.items.length; // BOQ + BOM + DUPA per item
+    expect(Object.keys(files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f))).toHaveLength(sheetCount);
+    for (const required of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/styles.xml']) {
+      expect(files[required]).toBeDefined();
+    }
+
+    const workbook = strFromU8(files['xl/workbook.xml']);
+    const names = [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map(m => m[1]);
+    expect(names.slice(0, 3)).toEqual(['BOQ', 'BOM', 'DUPA A1']);
+    expect(names).toContain('DUPA A14');
+    expect(names).toContain('DUPA I1');
+    expect(new Set(names.map(n => n.toLowerCase())).size).toBe(names.length);
+
+    // Project name with XML metacharacters is escaped, grand total is present
+    const boqXml = strFromU8(files['xl/worksheets/sheet1.xml']);
+    expect(boqXml).toContain('Twin &amp; &quot;Taurus&quot; &lt;Test&gt;');
+    expect(boqXml).toContain('GRAND TOTAL PROJECT ESTIMATE');
+    expect(boqXml).toContain(`<v>${getBoqProjectTotal(boq).grandTotal}</v>`);
+
+    if (typeof DOMParser !== 'undefined') {
+      for (const [path, bytes] of Object.entries(files)) {
+        const doc = new DOMParser().parseFromString(strFromU8(bytes), 'application/xml');
+        expect(doc.getElementsByTagName('parsererror'), path).toHaveLength(0);
+      }
+    }
+    expect(uniqueSheetName('A:B/C?', new Set())).toBe('A-B-C-');
+    const used = new Set(['dupa a1']);
+    expect(uniqueSheetName('DUPA A1', used)).toBe('DUPA A1 (2)');
+  });
+});

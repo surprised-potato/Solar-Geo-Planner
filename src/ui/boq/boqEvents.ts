@@ -2,7 +2,8 @@
  * Event wiring for the BOQ & DUPA workspace (tab switching, edits, CSV exports).
  */
 import { exportBoqAndDupaCsv, exportCostedBomCsv, normalizeDupaQuotes } from '../../geo/boqCalculator';
-import { downloadCsv, safeFileName } from '../../utils/download';
+import { downloadBlob, downloadCsv, safeFileName } from '../../utils/download';
+import { buildBoqXlsx } from '../../geo/boq/xlsxExport';
 import type { BoqAndDupaUI } from '../boqView';
 
 // ========================================================
@@ -84,6 +85,16 @@ export function attachEventListeners(this: BoqAndDupaUI): void {
     const boq = this.store.getBoqState(this.currentSystemId);
     const csv = exportBoqAndDupaCsv(this.store.projectName, boq, this.store.sections);
     downloadCsv(csv, `${safeFileName(this.store.projectName)}_BOQ_and_DUPA_${Date.now()}.csv`);
+  });
+
+  // 8b. Export BOQ, BOM and DUPA sheets as an Excel workbook
+  this.container.querySelector('#boq-btn-export-xlsx')?.addEventListener('click', () => {
+    const boq = this.store.getBoqState(this.currentSystemId);
+    const bytes = buildBoqXlsx(this.store.projectName, boq, this.store.sections);
+    downloadBlob(
+      new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      `${safeFileName(this.store.projectName)}_BOQ_BOM_DUPA_${Date.now()}.xlsx`
+    );
   });
 
   // 9. Export BOM CSV

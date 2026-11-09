@@ -152,6 +152,9 @@ export class BoqAndDupaUI {
             <button id="boq-btn-export-bom" class="btn btn-xs btn-outline" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-color: #38bdf8; color: #38bdf8;" title="Export Costed Bill of Materials to CSV">
               <span>📦</span> Export BOM
             </button>
+            <button id="boq-btn-export-xlsx" class="btn btn-xs btn-outline" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-color: #10b981; color: #10b981;" title="Export BOQ, costed BOM and every DUPA sheet to an Excel workbook">
+              <span>📊</span> Export XLSX
+            </button>
             <button id="boq-btn-export-csv" class="btn btn-xs btn-primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 12px; font-weight: bold;" title="Export BOQ Schedule & DUPAs to CSV">
               <span>📥</span> Export BOQ CSV
             </button>
