@@ -120,6 +120,13 @@ export function renderBuildingsTable(this: RegistryModalUI): string {
         <label>Heading (°) <input type="number" id="qa-heading" class="input-tbl-num" value="0" min="0" max="359" step="1" style="width: 60px;" /></label>
         <button id="btn-qa-add-houses" class="btn btn-sm btn-primary">➕ Add houses</button>
       </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-top: 8px;">
+        <label><input type="checkbox" id="qa-ko-on" checked /> Ventilation keep-outs</label>
+        <label>Ridge vent (m) <input type="number" id="qa-ko-ridge" class="input-tbl-num" value="0.6" min="0" step="0.1" style="width: 56px;" /></label>
+        <label>Eave inlets (m) <input type="number" id="qa-ko-eave" class="input-tbl-num" value="0.5" min="0" step="0.1" style="width: 56px;" /></label>
+        <label>Fan end (m) <input type="number" id="qa-ko-fan" class="input-tbl-num" value="3" min="0" step="0.5" style="width: 56px;" /></label>
+        <label>Pad end (m) <input type="number" id="qa-ko-pad" class="input-tbl-num" value="2" min="0" step="0.5" style="width: 56px;" /></label>
+      </div>
     </fieldset>
 
     <div tabindex="0" role="region" aria-label="Buildings Table" class="table-container table-wrapper">
@@ -148,6 +155,14 @@ export function attachBuildingsTableListeners(this: RegistryModalUI): void {
       roofPitchDeg: num('qa-pitch', 15),
       count: num('qa-count', 1),
       gapM: num('qa-gap', 10),
+      roofKeepOuts: (document.getElementById('qa-ko-on') as HTMLInputElement | null)?.checked
+        ? {
+            ridgeVentWidthM: num('qa-ko-ridge', 0.6),
+            eaveClearanceM: num('qa-ko-eave', 0.5),
+            fanEndClearanceM: num('qa-ko-fan', 3),
+            padEndClearanceM: num('qa-ko-pad', 2)
+          }
+        : null,
       sectionId: (document.getElementById('qa-farm') as HTMLSelectElement | null)?.value || undefined
     });
   });

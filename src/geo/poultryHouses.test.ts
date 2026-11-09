@@ -42,3 +42,39 @@ describe('generatePoultryHouseLayout', () => {
     expect(Math.hypot(c(2).x - c(1).x, c(2).y - c(1).y)).toBeCloseTo(24, 1);
   });
 });
+
+describe('ventilation keep-outs', () => {
+  const ko = { ridgeVentWidthM: 0.6, eaveClearanceM: 0.5, fanEndClearanceM: 3, padEndClearanceM: 2 };
+
+  it('adds no keep-outs unless requested', () => {
+    const [house] = generatePoultryHouseLayout(base);
+    expect(house.roofPlanes.every(p => p.keepOuts.length === 0)).toBe(true);
+  });
+
+  it('creates ridge, eave, fan-end and pad-end strips inside each roof plane', () => {
+    const [house] = generatePoultryHouseLayout({ ...base, roofKeepOuts: ko });
+    for (const plane of house.roofPlanes) {
+      expect(plane.keepOuts.map(k => k.name)).toEqual(['Ridge vent strip', 'Eave inlet clearance', 'Tunnel fan end', 'Cooling pad end']);
+      const areas = plane.keepOuts.map(k => computePolygonAreaSqM(k.vertices));
+      expect(areas[0]).toBeCloseTo(120 * 0.6, 0); // ridge: length x width
+      expect(areas[1]).toBeCloseTo(120 * 0.5, 0); // eave
+      expect(areas[2]).toBeCloseTo(3 * 7, 0);     // fan end: clearance x plane width (14/2)
+      expect(areas[3]).toBeCloseTo(2 * 7, 0);     // pad end
+    }
+  });
+
+  it('puts the ridge strip against the ridge and the eave strip against the eave on both planes', () => {
+    const [house] = generatePoultryHouseLayout({ ...base, roofKeepOuts: ko });
+    const acrossRange = (pts: { lat: number; lng: number }[]) => {
+      const m = pts.map(p => latLngToLocalMetric(p, anchor).x); // heading 0: across axis is east (x)
+      return [Math.min(...m), Math.max(...m)];
+    };
+    const [east, west] = house.roofPlanes;
+    const [r0, r1] = acrossRange(east.keepOuts[0].vertices);
+    expect(r0).toBeCloseTo(0, 1); expect(r1).toBeCloseTo(0.6, 1);
+    const [w0, w1] = acrossRange(west.keepOuts[0].vertices);
+    expect(w0).toBeCloseTo(-0.6, 1); expect(w1).toBeCloseTo(0, 1);
+    const [e0, e1] = acrossRange(east.keepOuts[1].vertices);
+    expect(e0).toBeCloseTo(6.5, 1); expect(e1).toBeCloseTo(7, 1);
+  });
+});

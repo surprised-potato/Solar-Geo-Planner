@@ -51,6 +51,18 @@ The interactive map CAD canvas includes high-fidelity rendering for roof rails:
 
 ---
 
+## 🐔 Utility-Scale Rooftop Projects (Poultry Houses)
+
+For multi-farm rooftop projects (e.g. solar on poultry tunnel-vent houses) open **Tables & Schedules**:
+
+1. **Buildings** tab – quick-add N gable houses (length, width, roof pitch, gap, heading). Each house becomes two roof-plane arrays; each new farm gets its own electrical system. Optional ventilation keep-outs (ridge vent, eave inlets, tunnel-fan end, cooling-pad end) are placed automatically.
+2. **Equipment** tab – per-farm battery storage (MWh / MW) and the utility interconnection (primary line km, pole span, voltage).
+3. **BOQ & DUPA** tab – one work-item set per farm (`A1…A13`, `B1…`, battery `A14`, interconnection `I1/I2`) with per-farm subtotals, a validation panel, a project-wide **Rates** library (CSV import/export), and **Export XLSX** (BOQ, costed BOM and one DUPA sheet per item).
+
+Large projects are gzip-compressed before cloud sync so they fit Firestore's 1 MiB document limit.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites

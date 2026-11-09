@@ -71,3 +71,24 @@ describe('poultry houses in ProjectStore', () => {
     expect(b.ridgeHeightM).toBeGreaterThan(b.eaveHeightM);
   });
 });
+
+describe('ventilation keep-outs in the store', () => {
+  it('attaches the keep-outs to each roof zone and removes PV from them', () => {
+    try { localStorage.clear(); } catch { /* no localStorage */ }
+    const plain = new ProjectStore(); plain.clearAll();
+    const vented = new ProjectStore(); vented.clearAll();
+    const [a] = plain.addPoultryHouses({ ...params, count: 1 });
+    const [b] = vented.addPoultryHouses({
+      ...params, count: 1,
+      roofKeepOuts: { ridgeVentWidthM: 0.6, eaveClearanceM: 0.5, fanEndClearanceM: 3, padEndClearanceM: 2 }
+    });
+    const zonesA = a.zoneIds.map(id => plain.zones.get(id)!);
+    const zonesB = b.zoneIds.map(id => vented.zones.get(id)!);
+    expect(zonesB.every(z => z.keepOuts.length === 4)).toBe(true);
+    expect(zonesA.every(z => z.keepOuts.length === 0)).toBe(true);
+    const total = (zs: typeof zonesA) => zs.reduce((s, z) => s + z.panelCount, 0);
+    expect(total(zonesB)).toBeLessThan(total(zonesA));
+    const ids = zonesB.flatMap(z => z.keepOuts.map(k => k.id));
+    expect(new Set(ids).size).toBe(ids.length); // ids unique across zones
+  });
+});

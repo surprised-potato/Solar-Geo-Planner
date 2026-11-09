@@ -3,6 +3,7 @@
  */
 import { BessConfig, Building, InterconnectionConfig, ProjectSection } from '../types/solar';
 import { generatePoultryHouseLayout, PoultryHouseParams } from '../geo/poultryHouses';
+import type { KeepOutPolygon } from '../types/solar';
 import type { ProjectStore } from './projectStore';
 
 export interface AddPoultryHousesOptions extends PoultryHouseParams {
@@ -67,6 +68,14 @@ export function addPoultryHouses(this: ProjectStore, opts: AddPoultryHousesOptio
         `${section.code}-House ${houseNo} ${i === 0 ? 'East' : 'West'} Plane`,
         systemId
       );
+      // Ventilation keep-outs go in before the config update so panels are laid out once, not per strip
+      if (plane.keepOuts.length > 0) {
+        zone.keepOuts = plane.keepOuts.map((k, n): KeepOutPolygon => ({
+          id: `ko_${zone.id}_${n}`,
+          name: k.name,
+          vertices: k.vertices
+        }));
+      }
       this.updateZoneConfig(zone.id, { azimuthDeg: plane.azimuthDeg, tiltDeg: plane.tiltDeg });
       zoneIds.push(zone.id);
       if (!section.systemIds.includes(zone.systemId)) section.systemIds.push(zone.systemId);
