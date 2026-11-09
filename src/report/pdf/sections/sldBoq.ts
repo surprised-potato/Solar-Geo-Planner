@@ -44,6 +44,9 @@ export async function renderSld(ctx: ReportCtx): Promise<void> {
         const sld = renderSldReportSvg(ctx.store, s.system.id, 'paper');
         const scale = Math.min(2, 2800 / Math.max(sld.width, sld.height));
         const uri = await svgToPngDataUri(sld.svg, Math.round(sld.width * scale), Math.round(sld.height * scale));
+        if (!uri.startsWith('data:image/png')) {
+          throw new Error('the browser could not rasterize the diagram SVG');
+        }
         return { uri, aspect: sld.width / sld.height };
       },
       M,

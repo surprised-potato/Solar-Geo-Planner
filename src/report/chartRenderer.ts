@@ -283,9 +283,18 @@ export function renderMonthlyYieldChartSvg(
 }
 
 /**
+ * Escapes bare ampersands so the markup is well-formed XML. An unescaped "&" makes the browser
+ * refuse to load the SVG as an image, which would silently drop the figure from the report.
+ */
+export function ensureXmlSafeSvg(svg: string): string {
+  return svg.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+}
+
+/**
  * Converts any SVG string to a PNG data URL via canvas using a Blob URL for reliable image decoding.
  */
 export async function svgToPngDataUri(svg: string, width: number, height: number): Promise<string> {
+  svg = ensureXmlSafeSvg(svg);
   if (typeof document === 'undefined') {
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }

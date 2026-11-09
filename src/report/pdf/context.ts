@@ -371,6 +371,7 @@ export class ReportCtx {
     if (this.dry) return;
     let uri: string | null = null;
     let aspect: number | undefined;
+    let failure = '';
     try {
       const res = await produce();
       if (res && typeof res === 'object') {
@@ -379,8 +380,10 @@ export class ReportCtx {
       } else {
         uri = res;
       }
-    } catch {
+    } catch (err) {
       uri = null;
+      failure = err instanceof Error ? err.message : String(err);
+      console.warn(`Report image "${placeholder}" failed:`, err);
     }
     this.stroke(COLORS.border, 0.3);
     const isPng = !!uri && uri.startsWith('data:image/png');
@@ -401,6 +404,9 @@ export class ReportCtx {
       this.fill(COLORS.zebra);
       this.doc.rect(x, y, w, h, 'FD');
       this.t(placeholder, x + w / 2, y + h / 2, { size: 8, color: COLORS.muted, align: 'center' });
+      if (failure) {
+        this.t(`Could not render: ${failure}`, x + w / 2, y + h / 2 + 5, { size: 6.5, color: COLORS.red, align: 'center', maxW: w - 10 });
+      }
     }
   }
 

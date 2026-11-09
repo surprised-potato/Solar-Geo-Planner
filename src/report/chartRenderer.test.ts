@@ -70,3 +70,12 @@ describe('Chart Renderer & PVsyst Loss Waterfall Engine', () => {
     expect(svg).toContain('</svg>');
   });
 });
+
+describe('ensureXmlSafeSvg', () => {
+  it('escapes bare ampersands but leaves entities alone', async () => {
+    const { ensureXmlSafeSvg } = await import('./chartRenderer');
+    expect(ensureXmlSafeSvg('<text>Meter & Main &amp; Tap &#176; &lt;</text>')).toBe(
+      '<text>Meter &amp; Main &amp; Tap &#176; &lt;</text>'
+    );
+  });
+});

@@ -22,6 +22,18 @@ describe('Single Line Diagram (SLD) 2D Wireframe View', () => {
     store.addZone(vertices, 'roof', 'Commercial Rooftop South');
   });
 
+  it('emits well-formed XML (no bare ampersands) for both interconnection types', () => {
+    const sys = store.getSelectedSystem()!;
+    const sldUI = new SingleLineDiagramUI(null as unknown as HTMLElement, store);
+    const bareAmp = /&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/;
+    for (const tap of ['line_side', 'load_side'] as const) {
+      store.updateSystem(sys.id, { mdpTapType: tap });
+      const svg = sldUI.generateWireframeSvg(buildSldSystemModel(store, sys.id));
+      const offending = svg.split('\n').filter(l => !l.trim().startsWith('<!--') && bareAmp.test(l));
+      expect(offending).toEqual([]);
+    }
+  });
+
   it('builds a valid electrical model for the selected system', () => {
     const systems = store.getSystems();
     expect(systems.length).toBeGreaterThan(0);
