@@ -4,13 +4,26 @@
 import { ProjectStore } from '../../store/projectStore';
 import { extractCostedBom, getBoqProjectTotal, getBoqSectionTotals, templateNoOf } from '../../geo/boqCalculator';
 import { escapeHtml } from '../../utils/html';
+import { summarizeIssues, validateBoq } from '../../geo/boq/boqValidation';
 import type { BoqAndDupaUI } from '../boqView';
 
 // ========================================================
 // TAB 1: BILL OF QUANTITIES (BOQ) SUMMARY TABLE
 // ========================================================
 export function renderBoqSummaryTab(this: BoqAndDupaUI, boqState: ReturnType<ProjectStore['getBoqState']>, totals: ReturnType<typeof getBoqProjectTotal>): string {
+  const issues = validateBoq(boqState, this.store.sections);
+  const { errors, warnings } = summarizeIssues(issues);
+  const validationHtml = issues.length === 0
+    ? `<div class="boq-validation ok" style="margin-bottom: 8px; padding: 8px 12px; border: 1px solid #10b981; border-radius: 6px; color: #10b981; font-size: 12px;">✓ BOQ checks passed: prices, quantities and farm consistency look good.</div>`
+    : `<details class="boq-validation" ${errors > 0 ? 'open' : ''} style="margin-bottom: 8px; padding: 8px 12px; border: 1px solid ${errors > 0 ? '#ef4444' : '#f59e0b'}; border-radius: 6px; font-size: 12px;">
+        <summary style="cursor: pointer; font-weight: bold; color: ${errors > 0 ? '#ef4444' : '#f59e0b'};">⚠ ${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — review before exporting</summary>
+        <ul style="margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto;">
+          ${issues.slice(0, 60).map(i => `<li style="color: ${i.severity === 'error' ? '#fca5a5' : '#fcd34d'};">${escapeHtml(i.message)}</li>`).join('')}
+          ${issues.length > 60 ? `<li>…and ${issues.length - 60} more</li>` : ''}
+        </ul>
+      </details>`;
   return `
+    ${validationHtml}
     <div class="boq-section-panel" style="background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; overflow: hidden;">
       <div style="padding: 12px 16px; background: rgba(56, 189, 248, 0.08); border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between;">
         <h3 style="margin: 0; font-size: 14px; font-weight: bold; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
