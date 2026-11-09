@@ -1,5 +1,6 @@
 import { ProjectStore } from '../store/projectStore';
 import { LatLngPoint, MetricPoint } from '../types/solar';
+import { getSystemHomeruns } from '../geo/stringCabling';
 import { latLngToLocalMetric, localMetricToLatLng, computePolygonCentroid } from '../geo/projection';
 import { escapeHtml } from '../utils/html';
 
@@ -79,8 +80,8 @@ export function computeProjectMetricBounds(
     if (sys.acInterconnectionLocation) {
       points.push(latLngToLocalMetric(sys.acInterconnectionLocation, origin));
     }
-    if (sys.homerunRaceway && sys.homerunRaceway.path) {
-      for (const p of sys.homerunRaceway.path) {
+    for (const hr of getSystemHomeruns(sys)) {
+      for (const p of hr.path) {
         points.push(latLngToLocalMetric(p, origin));
       }
     }
@@ -227,8 +228,8 @@ export function renderCadViewSvg(
   };
 
   for (const sys of systems) {
-    if (sys.homerunRaceway?.path) {
-      drawRaceway(sys.homerunRaceway.path, '#f59e0b');
+    for (const hr of getSystemHomeruns(sys)) {
+      drawRaceway(hr.path, '#f59e0b');
     }
     if (sys.acRaceway?.path) {
       drawRaceway(sys.acRaceway.path, '#10b981');
@@ -491,7 +492,7 @@ export function renderCadViewToCanvas(
   };
 
   for (const sys of systems) {
-    if (sys.homerunRaceway?.path) drawRacewayPath(sys.homerunRaceway.path, '#f59e0b');
+    for (const hr of getSystemHomeruns(sys)) drawRacewayPath(hr.path, '#f59e0b');
     if (sys.acRaceway?.path) drawRacewayPath(sys.acRaceway.path, '#10b981');
   }
 

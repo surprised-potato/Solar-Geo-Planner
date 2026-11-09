@@ -39,8 +39,10 @@ export function collectReportBundleData(
 
   // Load Matching simulation (if facility load profile exists)
   let simulationResult = null;
-  if (store.loadProfile) {
-    simulationResult = simulateSolarAndLoadMatching(solarYield, store.loadProfile);
+  // Respect the report scope: a load profile tied to another system must not be matched here.
+  const scopedLoadProfile = store.getLoadProfile(systemId);
+  if (scopedLoadProfile) {
+    simulationResult = simulateSolarAndLoadMatching(solarYield, scopedLoadProfile);
   }
 
   // Executive Metrics

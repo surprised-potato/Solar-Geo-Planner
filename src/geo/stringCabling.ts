@@ -194,8 +194,9 @@ export function calculateStringCableLengths(
     const zoneRaceway = (zone && zone.systemId === systemId && (!zone.raceway?.systemId || zone.raceway.systemId === systemId))
       ? zone.raceway
       : null;
-    const sharedHomerun = (system && (!system.homerunRaceway?.systemId || system.homerunRaceway.systemId === systemId))
-      ? system.homerunRaceway
+    // A system may own several homerun trunks: the string taps the one nearest its first module.
+    const sharedHomerun = system
+      ? pickNearestHomerun(getSystemHomeruns(system).filter(h => !h.systemId || h.systemId === systemId), startPanel.centroid)
       : null;
     const isShared = !zoneRaceway && Boolean(sharedHomerun && sharedHomerun.path && sharedHomerun.path.length >= 2);
     const raceway: RacewayConfig | undefined = (zoneRaceway || sharedHomerun) ?? undefined;
@@ -331,6 +332,7 @@ export function calculateStringCableLengths(
       endPoint: endPanel.centroid,
       tapPointPos,
       tapPointNeg,
+      racewayId: raceway?.id,
       isSharedHomerun: isShared
     });
   }
@@ -368,12 +370,13 @@ export function summarizeSystemCabling(
 
   const uniqueZones = new Set<string>();
   let totalRacewayLengthM = 0;
-  let hasSharedHomerunCounted = false;
+  const countedRacewayIds = new Set<string>();
   for (const s of sysStrings) {
     if (s.hasRaceway && s.racewayPathLengthM) {
       if (s.isSharedHomerun) {
-        if (!hasSharedHomerunCounted) {
-          hasSharedHomerunCounted = true;
+        const key = s.racewayId ?? '__shared__';
+        if (!countedRacewayIds.has(key)) {
+          countedRacewayIds.add(key);
           totalRacewayLengthM += s.racewayPathLengthM;
         }
       } else if (!uniqueZones.has(s.zoneId)) {
@@ -923,4 +926,29 @@ export function partitionPanelsIntoStrings(
   }
 
   return { stringGroups, warnings };
+}
+
+
+/** Every homerun trunk drawn for a system: the primary one first, then any extras. */
+export function getSystemHomeruns(system: SolarSystem | null | undefined): RacewayConfig[] {
+  if (!system) return [];
+  const all: RacewayConfig[] = [];
+  if (system.homerunRaceway) all.push(system.homerunRaceway);
+  if (system.extraHomeruns) all.push(...system.extraHomeruns);
+  return all.filter(h => h && h.path && h.path.length >= 2);
+}
+
+/** The homerun whose path passes closest to `point` (null when there are none). */
+export function pickNearestHomerun(homeruns: RacewayConfig[], point: LatLngPoint): RacewayConfig | null {
+  let best: RacewayConfig | null = null;
+  let bestDist = Infinity;
+  for (const h of homeruns) {
+    if (!h.path || h.path.length < 2) continue;
+    const d = findClosestPointOnPolyline(point, h.path).distanceM;
+    if (d < bestDist) {
+      bestDist = d;
+      best = h;
+    }
+  }
+  return best;
 }

@@ -129,7 +129,8 @@ export interface SolarSystem {
   zoneIds: string[]; // List of ArrayZone IDs linked into this system
   inverterLocation?: LatLngPoint | null; // Geolocation coordinates of Inverter Power House
   inverterElevationM?: number;           // Ground elevation of Inverter Power House (meters, default 0)
-  homerunRaceway?: RacewayConfig | null; // Shared system-wide homerun trunk / raceway
+  homerunRaceway?: RacewayConfig | null; // Primary shared system-wide homerun trunk / raceway
+  extraHomeruns?: RacewayConfig[];       // Additional homerun trunks drawn for this system (strings tap the nearest trunk)
   acInterconnectionLocation?: LatLngPoint | null; // Geolocation coordinates of AC Point of Common Coupling (PCC / Meter)
   acInterconnectionElevationM?: number;          // Ground elevation of AC Interconnection Point (meters, default 0)
   acRaceway?: RacewayConfig | null;              // AC Feeder Raceway from Inverter Station to PCC
@@ -209,6 +210,7 @@ export interface StringCableLength {
   endPoint: LatLngPoint;
   tapPointPos?: LatLngPoint;        // Geographic tap-in junction point for (+) lead on homerun trunk
   tapPointNeg?: LatLngPoint;        // Geographic tap-in junction point for (-) lead on homerun trunk
+  racewayId?: string;               // ID of the raceway / homerun trunk this string taps into
   isSharedHomerun?: boolean;        // True if connected via system-level shared homerun trunk
 }
 

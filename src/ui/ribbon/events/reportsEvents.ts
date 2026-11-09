@@ -2,6 +2,7 @@
  * Reports tab listeners: exports, imports and report launchers.
  */
 import type { RibbonUI } from '../../ribbon';
+import { downloadStringingGuide } from '../../stringingGuideExport';
 
 export function attachReportsTabListeners(this: RibbonUI): void {
   // --- Reports Tab Listeners ---
@@ -11,6 +12,25 @@ export function attachReportsTabListeners(this: RibbonUI): void {
     } else {
       document.getElementById('btn-open-pdf-report')?.click();
     }
+  });
+
+  const stringingBtn = document.getElementById('ribbon-btn-gen-stringing') as HTMLButtonElement | null;
+  stringingBtn?.addEventListener('click', () => {
+    const original = stringingBtn.innerHTML;
+    stringingBtn.disabled = true;
+    stringingBtn.innerHTML = '<span>⏳</span> Building stringing guide...';
+    // Let the button repaint before the (synchronous) PDF build starts.
+    setTimeout(() => {
+      try {
+        downloadStringingGuide(this.store);
+      } catch (err) {
+        console.error('Stringing guide export failed:', err);
+        alert('Could not export the stringing guide: ' + (err as Error).message);
+      } finally {
+        stringingBtn.disabled = false;
+        stringingBtn.innerHTML = original;
+      }
+    }, 30);
   });
 
   document.getElementById('ribbon-btn-open-tables-reg')?.addEventListener('click', () => {

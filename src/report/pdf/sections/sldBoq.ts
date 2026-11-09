@@ -1,25 +1,60 @@
-import { COLORS, M, ReportCtx, num, php } from '../context';
+import { COLORS, M, PaperFormat, ReportCtx, num, pageSizeMm, php } from '../context';
 import { drawTable } from '../table';
 import { svgToPngDataUri } from '../../chartRenderer';
 import { renderSldReportSvg, SingleLineDiagramUI } from '../../../ui/sldView';
 import { getSldDimensions } from '../../../ui/sld/sldWireframe';
 import { SldSystemModel } from '../../../geo/sldModel';
 import { extractCostedBom } from '../../../geo/boq/boqExport';
+import { generateBoqFromRegistryAndSld } from '../../../geo/boqCalculator';
 import { getBoqProjectTotal } from '../../../geo/boq/dupaMath';
 
-/** Page orientation that best fits a diagram of this shape (tall diagrams get portrait pages). */
-function sldIsLandscape(model: SldSystemModel): boolean {
-  // getSldDimensions only reads the model; it never touches its `this`.
-  const { totalSvgWidth, totalSvgHeight } = getSldDimensions.call(undefined as unknown as SingleLineDiagramUI, model);
-  return totalSvgWidth / totalSvgHeight >= 1.05;
+/** Smallest scale (mm of paper per diagram px) at which SLD text stays readable when printed. */
+export const SLD_MIN_MM_PER_PX = 0.1;
+
+export interface SldPaper {
+  format: PaperFormat;
+  landscape: boolean;
+  /** Paper mm per diagram px when the diagram is fitted to the printable area. */
+  mmPerPx: number;
 }
 
-/** Single-line diagram: one page per system in scope, oriented to the diagram's shape. */
+/**
+ * Picks the paper for a diagram of the given pixel size: A3 when it stays readable there,
+ * otherwise A2. Orientation follows the diagram's shape.
+ */
+export function pickSldPaper(width: number, height: number): SldPaper {
+  const landscape = width / height >= 1.05;
+  const fit = (format: PaperFormat): number => {
+    const { w, h } = pageSizeMm(format, landscape);
+    const availW = w - 2 * M;
+    const availH = h - 36 - 16; // heading block above, footer below
+    return Math.min(availW / width, availH / height);
+  };
+  const a3 = fit('a3');
+  if (a3 >= SLD_MIN_MM_PER_PX) return { format: 'a3', landscape, mmPerPx: a3 };
+  return { format: 'a2', landscape, mmPerPx: fit('a2') };
+}
+
+function sldPaperFor(model: SldSystemModel): SldPaper {
+  // getSldDimensions only reads the model; it never touches its `this`.
+  const { totalSvgWidth, totalSvgHeight } = getSldDimensions.call(undefined as unknown as SingleLineDiagramUI, model);
+  return pickSldPaper(totalSvgWidth, totalSvgHeight);
+}
+
+function paperLabel(p: SldPaper): string {
+  return `${p.format.toUpperCase()} ${p.landscape ? 'landscape' : 'portrait'}`;
+}
+
+/** Single-line diagram: one sheet page per system, each on A3 or A2 as the diagram requires. */
 export async function renderSld(ctx: ReportCtx): Promise<void> {
   const systems = ctx.bundle.systems;
-  const subtitle = 'String allocation, MPPT channels, protection devices and grid connection.';
-  const firstLandscape = systems.length ? sldIsLandscape(systems[0].sldModel) : true;
-  ctx.beginSection('sld', 'Single Line Diagram', { landscape: firstLandscape, subtitle });
+  const papers = systems.map(s => sldPaperFor(s.sldModel));
+  const first = papers[0] ?? { format: 'a3' as PaperFormat, landscape: true, mmPerPx: 0 };
+  ctx.beginSection('sld', 'Single Line Diagram', {
+    landscape: first.landscape,
+    format: first.format,
+    subtitle: `String allocation, MPPT channels, protection devices and grid connection. Printed on ${paperLabel(first)}: print at 100% scale.`
+  });
 
   if (systems.length === 0) {
     ctx.paragraph('No solar systems defined.', { style: 'italic', color: COLORS.muted });
@@ -28,9 +63,10 @@ export async function renderSld(ctx: ReportCtx): Promise<void> {
 
   for (let i = 0; i < systems.length; i++) {
     const s = systems[i];
+    const paper = papers[i];
     if (i > 0) {
-      ctx.newPage(sldIsLandscape(s.sldModel), { sheet: ctx.sheet, title: 'Single Line Diagram', chrome: true });
-      ctx.t(`Single Line Diagram \u2014 ${s.system.name}`, M, 25, { style: 'bold', size: 11, color: COLORS.ink });
+      ctx.newPage(paper.landscape, { sheet: ctx.sheet, title: 'Single Line Diagram', chrome: true }, paper.format);
+      ctx.t(`Single Line Diagram \u2014 ${s.system.name} (${paperLabel(paper)})`, M, 25, { style: 'bold', size: 11, color: COLORS.ink });
       ctx.y = 31;
     } else if (systems.length > 1) {
       ctx.t(s.system.name, M, ctx.y + 3, { style: 'bold', size: 9, color: COLORS.navy });
@@ -42,7 +78,8 @@ export async function renderSld(ctx: ReportCtx): Promise<void> {
       async () => {
         if (typeof document === 'undefined') return null;
         const sld = renderSldReportSvg(ctx.store, s.system.id, 'paper');
-        const scale = Math.min(2, 2800 / Math.max(sld.width, sld.height));
+        // Rasterize near the printed size (about 150 dpi) so A2 sheets stay crisp.
+        const scale = Math.min(2, 4200 / Math.max(sld.width, sld.height));
         const uri = await svgToPngDataUri(sld.svg, Math.round(sld.width * scale), Math.round(sld.height * scale));
         if (!uri.startsWith('data:image/png')) {
           throw new Error('the browser could not rasterize the diagram SVG');
@@ -65,7 +102,11 @@ export function renderBoq(ctx: ReportCtx): void {
     subtitle: 'Estimate built from DUPA work items (materials, labour, equipment) with OCM, profit and VAT.'
   });
 
-  const boq = ctx.store.getBoqState(sysFilter);
+  // A scoped report must not overwrite the project BOQ cached in the store, so build the
+  // single-system BOQ on the side (keeping the project's edited rates as the baseline).
+  const boq = sysFilter
+    ? generateBoqFromRegistryAndSld(ctx.store, sysFilter, ctx.store.boqState ?? undefined)
+    : ctx.store.getBoqState();
   if (!boq || !boq.items || boq.items.length === 0) {
     ctx.paragraph('No BOQ items have been generated for this project.', { style: 'italic', color: COLORS.muted });
     return;

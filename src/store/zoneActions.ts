@@ -391,3 +391,120 @@ export function regenerateZonePanels(this: ProjectStore, zoneId: string, shouldN
     this.notify();
   }
 }
+
+
+/** Snapshot of an array kept on the internal clipboard. */
+export interface ClipboardZone {
+  zone: ArrayZone;
+  inactivePanels: Array<{ row: number; col: number }>;
+}
+
+/** Copies the currently selected arrays onto the store's internal clipboard. Returns the count copied. */
+export function copySelectedZones(this: ProjectStore): number {
+  const ids = this.getSelectedZoneIds();
+  const items: ClipboardZone[] = [];
+  for (const id of ids) {
+    const zone = this.zones.get(id);
+    if (!zone) continue;
+    const inactivePanels: Array<{ row: number; col: number }> = [];
+    for (const p of this.panels.values()) {
+      if (p.zoneId === id && !p.active) inactivePanels.push({ row: p.rowIndex, col: p.colIndex });
+    }
+    items.push({ zone: structuredClone(zone), inactivePanels });
+  }
+  this.zoneClipboard = items;
+  return items.length;
+}
+
+/**
+ * Pastes clipboard arrays. If `anchor` is given the group's centre lands there,
+ * otherwise the group is placed immediately to the east of the original.
+ * Returns the new zones (selected afterwards).
+ */
+export function pasteZones(this: ProjectStore, anchor?: LatLngPoint): ArrayZone[] {
+  const items = this.zoneClipboard;
+  if (items.length === 0) return [];
+
+  const pts = items.flatMap(i => i.zone.vertices);
+  const minLat = Math.min(...pts.map(p => p.lat)), maxLat = Math.max(...pts.map(p => p.lat));
+  const minLng = Math.min(...pts.map(p => p.lng)), maxLng = Math.max(...pts.map(p => p.lng));
+  const cLat = (minLat + maxLat) / 2, cLng = (minLng + maxLng) / 2;
+
+  this.pasteCount++;
+  let dLat: number, dLng: number;
+  if (anchor) {
+    dLat = anchor.lat - cLat;
+    dLng = anchor.lng - cLng;
+  } else {
+    const gap = (maxLng - minLng) * 0.1 || 0.00005;
+    dLat = 0;
+    dLng = (maxLng - minLng + gap) * this.pasteCount;
+  }
+  const shift = (p: LatLngPoint): LatLngPoint => ({ lat: p.lat + dLat, lng: p.lng + dLng });
+
+  const created: ArrayZone[] = [];
+  for (const { zone: src, inactivePanels } of items) {
+    const id = `zone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const color = ZONE_COLORS[this.colorIndex % ZONE_COLORS.length];
+    this.colorIndex++;
+    const systemId = this.systems.has(src.systemId) ? src.systemId : this.systems.keys().next().value!;
+
+    const zone: ArrayZone = {
+      ...structuredClone(src),
+      id,
+      systemId,
+      name: nextZoneName(this, src.name),
+      color,
+      vertices: src.vertices.map(shift),
+      keepOuts: src.keepOuts.map(k => ({
+        ...structuredClone(k),
+        id: `ko_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        vertices: k.vertices.map(shift)
+      })),
+      tables: [],
+      rails: [],
+      tableCount: 0,
+      railCount: 0,
+      raceway: null,
+      panelCount: 0,
+      activePanelCount: 0,
+      totalKwp: 0
+    };
+    this.zones.set(id, zone);
+    const sys = this.systems.get(systemId);
+    if (sys && !sys.zoneIds.includes(id)) sys.zoneIds.push(id);
+
+    this.regenerateZonePanels(id, false);
+    if (inactivePanels.length > 0) {
+      const off = new Set(inactivePanels.map(i => `${i.row}:${i.col}`));
+      for (const p of this.panels.values()) {
+        if (p.zoneId === id && off.has(`${p.rowIndex}:${p.colIndex}`)) p.active = false;
+      }
+      this.regenerateZonePanels(id, false);
+    }
+    created.push(zone);
+  }
+
+  this.selectedZoneIds.clear();
+  for (const z of created) this.selectedZoneIds.add(z.id);
+  this.selectedZoneId = created[0].id;
+  this.selectedPanelId = null;
+  this.selectedKeepOutId = null;
+  this.notify();
+  return created;
+}
+
+
+/** "Roof Array 3" -> next unused "Roof Array N" (highest existing N with that base + 1). */
+function nextZoneName(store: ProjectStore, name: string): string {
+  const m = name.trim().match(/^(.*?)(?:\s+(\d+))?$/);
+  const base = (m?.[1] || name).trim();
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${escaped}(?:\\s+(\\d+))?$`);
+  let max = 1;
+  for (const z of store.zones.values()) {
+    const mm = z.name.trim().match(re);
+    if (mm) max = Math.max(max, mm[1] ? parseInt(mm[1], 10) : 1);
+  }
+  return `${base} ${max + 1}`;
+}

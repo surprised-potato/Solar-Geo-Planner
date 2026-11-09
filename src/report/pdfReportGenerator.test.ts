@@ -7,6 +7,7 @@ import {
   planReport
 } from './pdfReportGenerator';
 import { ReportExportOptions } from './reportTypes';
+import { createDefaultLoadProfile } from '../geo/loadProfile';
 
 describe('PVsyst PDF Report Generator (pdfReportGenerator)', () => {
   let store: ProjectStore;
@@ -174,5 +175,49 @@ describe('PVsyst PDF Report Generator (pdfReportGenerator)', () => {
     const noSchedule = await planReport(store, { ...defaultOptions, includeArraySchedule: false });
     expect(noSchedule.toc.map(e => e.id)).not.toContain('arrays');
     expect(noSchedule.totalPages).toBeLessThan(plan.totalPages);
+  });
+
+  describe('system scope', () => {
+    function addSecondSystem(): string {
+      const sys2 = store.addSystem('Ground System 2');
+      store.addZone(
+        [
+          localMetricToLatLng({ x: 50, y: 0 }, origin),
+          localMetricToLatLng({ x: 100, y: 0 }, origin),
+          localMetricToLatLng({ x: 100, y: 40 }, origin),
+          localMetricToLatLng({ x: 50, y: 40 }, origin)
+        ],
+        'ground',
+        'Ground Array 2',
+        sys2.id
+      );
+      return sys2.id;
+    }
+
+    it('does not match a load profile that belongs to another system', () => {
+      const sys2Id = addSecondSystem();
+      const sys1Id = store.getSystems()[0].id;
+      store.loadProfile = createDefaultLoadProfile(360000, 'commercial_office', 'Meter', sys1Id);
+
+      expect(collectReportBundleData(store, { ...defaultOptions, systemId: sys1Id }).simulationResult).not.toBeNull();
+      expect(collectReportBundleData(store, { ...defaultOptions, systemId: sys2Id }).simulationResult).toBeNull();
+      expect(collectReportBundleData(store, { ...defaultOptions, systemId: 'all' }).simulationResult).not.toBeNull();
+    });
+
+    it('exports a scoped BOQ without overwriting the project BOQ held in the store', async () => {
+      const sys2Id = addSecondSystem();
+      expect(store.boqState).toBeNull();
+      const doc = await generatePvsystPdf(store, { ...defaultOptions, systemId: sys2Id, includeBoq: true });
+      expect(doc.getNumberOfPages()).toBeGreaterThan(1);
+      expect(store.boqState).toBeNull();
+    });
+
+    it('builds spec data for exactly the selected system', () => {
+      const sys2Id = addSecondSystem();
+      const bundle = collectReportBundleData(store, { ...defaultOptions, systemId: sys2Id });
+      expect(bundle.systems.map(s => s.system.id)).toEqual([sys2Id]);
+      expect(bundle.systems[0].zones.every(z => z.systemId === sys2Id)).toBe(true);
+      expect(bundle.zones.map(z => z.name)).toEqual(['Ground Array 2']);
+    });
   });
 });

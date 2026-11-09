@@ -8,6 +8,7 @@ import {
   getCompassHeading
 } from '../../geo/projection';
 import type { MapController } from '../mapController';
+import { renderTransformHandles } from './transformHandles';
 import { escapeHtml } from '../../utils/html';
 
 /** Pointer travel (px) before a handle press counts as a drag rather than a click. */
@@ -25,6 +26,7 @@ export function renderVertexHandles(this: MapController): void {
   ) {
     return;
   }
+  renderTransformHandles.call(this);
   const selectedZone = this.store.getSelectedZone();
   if (!selectedZone || selectedZone.vertices.length < 3) return;
 

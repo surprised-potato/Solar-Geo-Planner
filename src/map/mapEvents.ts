@@ -55,7 +55,11 @@ export function setupMapEvents(this: MapController): void {
     this.addDrawingPoint(pt);
   });
 
+  this.map.getContainer().addEventListener('mouseenter', () => { this.cursorOverMap = true; });
+  this.map.getContainer().addEventListener('mouseleave', () => { this.cursorOverMap = false; });
+
   this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
+    this.lastCursorLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
     if (this.store.drawingMode === 'none' || this.drawingPoints.length === 0) return;
 
     const cursorPt: LatLngPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
@@ -90,6 +94,9 @@ export function setupMapEvents(this: MapController): void {
     }
   });
 
+  // Arrow keys nudge the selected arrays instead of panning the map.
+  this.map.keyboard.disable();
+
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
     if (target) {
@@ -98,6 +105,61 @@ export function setupMapEvents(this: MapController): void {
         return;
       }
       if (target.closest('dialog[open], .modal-overlay:not([hidden])')) {
+        return;
+      }
+    }
+
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && (e.key === 'c' || e.key === 'C') && this.store.drawingMode === 'none') {
+      if (this.store.selectedPanelId === null && this.store.getSelectedZoneIds().length > 0) {
+        this.store.copySelectedZones();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (mod && (e.key === 'v' || e.key === 'V') && this.store.drawingMode === 'none') {
+      if (this.store.zoneClipboard.length > 0) {
+        this.store.pasteZones(this.cursorOverMap ? this.lastCursorLatLng ?? undefined : undefined);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (mod && (e.key === 'x' || e.key === 'X') && this.store.drawingMode === 'none') {
+      if (this.store.selectedPanelId === null && this.store.getSelectedZoneIds().length > 0) {
+        this.store.cutSelectedZones();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (mod && (e.key === 'd' || e.key === 'D') && this.store.drawingMode === 'none') {
+      if (this.store.selectedPanelId === null && this.store.getSelectedZoneIds().length > 0) {
+        this.store.duplicateSelectedZones();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (mod && (e.key === 'a' || e.key === 'A') && this.store.drawingMode === 'none') {
+      this.store.selectAllZones();
+      e.preventDefault();
+      return;
+    }
+
+    // Nudge / rotate the selection from the keyboard.
+    if (!mod && this.store.drawingMode === 'none' && this.store.selectedPanelId === null && this.store.getSelectedZoneIds().length > 0) {
+      const step = e.shiftKey ? 10 : e.altKey ? 0.1 : 1;
+      const arrows: Record<string, [number, number]> = {
+        ArrowUp: [0, step], ArrowDown: [0, -step], ArrowLeft: [-step, 0], ArrowRight: [step, 0]
+      };
+      if (arrows[e.key]) {
+        this.store.moveSelectedZones(arrows[e.key][0], arrows[e.key][1]);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}') {
+        const deg = e.shiftKey ? 15 : e.altKey ? 0.1 : 1;
+        this.store.rotateSelectedZones(e.key === ']' || e.key === '}' ? deg : -deg);
+        e.preventDefault();
         return;
       }
     }
@@ -181,8 +243,9 @@ export function deleteSelectedElement(this: MapController): boolean {
   // 2. Homerun selected
   if (this.selectedHomerunSystemId) {
     const sysId = this.selectedHomerunSystemId;
-    this.store.clearSystemHomerun(sysId);
+    this.store.clearSystemHomerun(sysId, this.selectedHomerunId || undefined);
     this.selectedHomerunSystemId = null;
+    this.selectedHomerunId = null;
     this.updateSelectionHud();
     return true;
   }

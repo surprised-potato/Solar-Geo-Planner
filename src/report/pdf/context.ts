@@ -82,7 +82,22 @@ export function pct(n: number | undefined | null): number {
   return Number.isFinite(n as number) ? (n as number) : 0;
 }
 
+export type PaperFormat = 'a4' | 'a3' | 'a2';
+
+/** Portrait page size in mm. */
+export const PAPER_MM: Record<PaperFormat, { w: number; h: number }> = {
+  a4: { w: 210, h: 297 },
+  a3: { w: 297, h: 420 },
+  a2: { w: 420, h: 594 }
+};
+
+export function pageSizeMm(format: PaperFormat, landscape: boolean): { w: number; h: number } {
+  const p = PAPER_MM[format];
+  return landscape ? { w: p.h, h: p.w } : { w: p.w, h: p.h };
+}
+
 export interface PageMeta {
+  format: PaperFormat;
   sheet: number; // 0 = cover / contents (not a numbered sheet)
   title: string;
   landscape: boolean;
@@ -114,6 +129,8 @@ export class ReportCtx {
   readonly doc: jsPDF;
   readonly pages: PageMeta[] = [];
   readonly toc: TocEntry[] = [];
+  /** Title printed in the page header. */
+  reportTitle = 'SOLAR GEO PLANNER \u2014 SIMULATION & ENGINEERING REPORT';
   sheet = 0;
   y = 22;
   /** Sheets that will be rendered, in order (used by the contents page). */
@@ -143,11 +160,14 @@ export class ReportCtx {
   get landscape(): boolean {
     return this.pages.length ? this.pages[this.pages.length - 1].landscape : false;
   }
+  get format(): PaperFormat {
+    return this.pages.length ? this.pages[this.pages.length - 1].format : 'a4';
+  }
   get pageW(): number {
-    return this.landscape ? 297 : 210;
+    return pageSizeMm(this.format, this.landscape).w;
   }
   get pageH(): number {
-    return this.landscape ? 210 : 297;
+    return pageSizeMm(this.format, this.landscape).h;
   }
   get contentW(): number {
     return this.pageW - 2 * M;
@@ -199,25 +219,26 @@ export class ReportCtx {
 
   // ---- pagination ---------------------------------------------------------
 
-  newPage(landscape: boolean, meta: Omit<PageMeta, 'landscape'>): void {
+  newPage(landscape: boolean, meta: Omit<PageMeta, 'landscape' | 'format'>, format: PaperFormat = 'a4'): void {
+    const orientation = landscape ? 'landscape' : 'portrait';
     if (this.firstPageFree) {
       this.firstPageFree = false;
-      if (landscape !== this.initialLandscape) {
-        // The auto-created first page has the wrong orientation: replace it.
-        this.doc.addPage('a4', landscape ? 'landscape' : 'portrait');
+      if (landscape !== this.initialLandscape || format !== 'a4') {
+        // The auto-created first page (A4) has the wrong size/orientation: replace it.
+        this.doc.addPage(format, orientation);
         this.doc.deletePage(1);
       }
     } else {
-      this.doc.addPage('a4', landscape ? 'landscape' : 'portrait');
+      this.doc.addPage(format, orientation);
     }
-    this.pages.push({ ...meta, landscape });
+    this.pages.push({ ...meta, landscape, format });
     this.y = 22;
   }
 
   /** Starts a numbered sheet (new page + heading + table-of-contents entry). */
-  beginSection(id: string, title: string, opts: { landscape?: boolean; subtitle?: string } = {}): void {
+  beginSection(id: string, title: string, opts: { landscape?: boolean; format?: PaperFormat; subtitle?: string } = {}): void {
     this.sheet++;
-    this.newPage(!!opts.landscape, { sheet: this.sheet, title, chrome: true });
+    this.newPage(!!opts.landscape, { sheet: this.sheet, title, chrome: true }, opts.format ?? 'a4');
     this.toc.push({ id, sheet: this.sheet, title, startPage: this.pageNo, endPage: this.pageNo });
     this.heading(title, opts.subtitle);
   }
@@ -225,7 +246,7 @@ export class ReportCtx {
   /** Continues the current sheet on a fresh page of the same orientation. */
   continuePage(title?: string): void {
     const cur = this.pages[this.pages.length - 1];
-    this.newPage(cur.landscape, { sheet: cur.sheet, title: cur.title, chrome: true });
+    this.newPage(cur.landscape, { sheet: cur.sheet, title: cur.title, chrome: true }, cur.format);
     const shown = title ?? `${cur.title} (cont.)`;
     this.t(shown, M, 25, { style: 'bold', size: 11, color: COLORS.ink });
     this.y = 31;
@@ -447,17 +468,17 @@ export class ReportCtx {
   }
 
   private drawChrome(pageNo: number, total: number, meta: PageMeta, variant: string): void {
-    const pageW = meta.landscape ? 297 : 210;
-    const pageH = meta.landscape ? 210 : 297;
+    const { w: pageW, h: pageH } = pageSizeMm(meta.format, meta.landscape);
     this.fill(COLORS.navy);
     this.doc.rect(0, 0, pageW, 4, 'F');
     this.fill(COLORS.amber);
     this.doc.rect(0, 4, pageW * 0.35, 1.5, 'F');
 
-    this.t('SOLAR GEO PLANNER — SIMULATION & ENGINEERING REPORT', M, 11, { style: 'bold', size: 8.5, color: COLORS.ink });
+    this.t(this.reportTitle, M, 11, { style: 'bold', size: 8.5, color: COLORS.ink });
     this.t(`${this.bundle.projectName} • ${variant}`, M, 15, { size: 7.5, color: COLORS.muted, maxW: pageW * 0.6 });
     this.t(`Date: ${this.options.reportDate}`, pageW - M, 11, { size: 7.5, color: COLORS.muted, align: 'right' });
-    const label = meta.sheet > 0 ? `Sheet ${meta.sheet} — ${meta.title}` : meta.title;
+    const paper = meta.format === 'a4' ? '' : ` • ${meta.format.toUpperCase()}`;
+    const label = (meta.sheet > 0 ? `Sheet ${meta.sheet} — ${meta.title}` : meta.title) + paper;
     this.t(label, pageW - M, 15, { style: 'bold', size: 7.5, color: COLORS.navy, align: 'right', maxW: pageW * 0.4 });
 
     this.stroke(COLORS.line, 0.3);

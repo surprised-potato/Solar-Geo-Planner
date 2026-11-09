@@ -20,8 +20,18 @@ export async function renderSummary(ctx: ReportCtx): Promise<void> {
     { label: 'Capacity factor', value: `${em.capacityFactor} %`, sub: 'Net energy / (kWp × 8760 h)' }
   ]);
 
-  const mod = bundle.primaryModule;
-  const inv = bundle.primaryInverter;
+  // Specs come from every system in scope, not just the first one.
+  const moduleNames = Array.from(new Set(bundle.systems.map(sys => sys.module.name)));
+  const invGroups = new Map<string, number>();
+  for (const sys of bundle.systems) {
+    const inv = sys.system.inverter;
+    const key = `${inv.ratedAcPowerKw} kW`;
+    invGroups.set(key, (invGroups.get(key) ?? 0) + (inv.inverterCount || 1));
+  }
+  const moduleLabel = moduleNames.length === 1 ? moduleNames[0] : moduleNames.length ? `${moduleNames.length} models (see below)` : '\u2014';
+  const inverterLabel = invGroups.size
+    ? Array.from(invGroups.entries()).map(([kw, n]) => `${n} \u00d7 ${kw}`).join(' + ')
+    : '\u2014';
   const variant = options.systemId === 'all' ? `All systems (${bundle.targetSystems.length})` : bundle.targetSystems[0]?.name ?? '—';
   ctx.kvCardsRow(
     {
@@ -41,14 +51,42 @@ export async function renderSummary(ctx: ReportCtx): Promise<void> {
       rows: [
         ['PV array nominal power (DC)', `${num(em.totalDcKwp, 1)} kWp`],
         ['Number of PV modules', num(em.totalPanels)],
-        ['PV module', mod.name],
-        ['Inverters', `${em.totalInverters} × ${inv.ratedAcPowerKw} kW`],
+        ['PV module', moduleLabel],
+        ['Inverters', inverterLabel],
         ['Inverter AC power (total)', `${num(em.totalAcKw, 1)} kW`],
         ['DC / AC ratio', String(em.dcAcRatio)],
         ['Sub-arrays / footprint', `${bundle.zones.length} / ${num(em.totalAreaSqM)} m²`]
       ]
     }
   );
+
+  if (bundle.systems.length > 0) {
+    ctx.subheading('Systems in this report');
+    drawTable(ctx, {
+      columns: [
+        { header: 'System', width: 3.4, bold: true, color: COLORS.navy },
+        { header: 'Sub-arrays', width: 1.4, align: 'right' },
+        { header: 'Modules', width: 1.4, align: 'right' },
+        { header: 'DC kWp', width: 1.5, align: 'right', bold: true },
+        { header: 'PV module', width: 3.2 },
+        { header: 'Inverter(s)', width: 3.4 },
+        { header: 'DC/AC', width: 1.2, align: 'right' }
+      ],
+      rows: bundle.systems.map(sys => {
+        const inv = sys.system.inverter;
+        return [
+          sys.system.name,
+          String(sys.zones.length),
+          num(sys.zones.reduce((a, z) => a + z.moduleCount, 0)),
+          sys.zones.reduce((a, z) => a + z.totalKwp, 0).toFixed(1),
+          sys.module.name,
+          `${inv.inverterCount || 1} \u00d7 ${inv.ratedAcPowerKw} kW ${inv.modelName}`,
+          sys.sldModel.overallDcAcRatio.toFixed(2)
+        ];
+      }),
+      fontSize: 6.8
+    });
+  }
 
   ctx.subheading('Main simulation results');
   const eArray = perf.total.eArrayMwh;

@@ -7,6 +7,7 @@ import { ProjectBoqState } from '../../types/solar';
 import { ProjectStore } from '../../store/projectStore';
 import { buildSldSystemModel } from '../sldModel';
 import { calculateGeodeticDistanceM } from '../projection';
+import { getSystemHomeruns } from '../stringCabling';
 import {
   DEFAULT_OCM_PERCENT,
   DEFAULT_PROFIT_PERCENT,
@@ -163,21 +164,21 @@ export function buildBoqContext(
 
   // 1. Shared system homerun raceways (counted once per system in scope)
   for (const s of systems) {
-    if (s.homerunRaceway && s.homerunRaceway.path && s.homerunRaceway.path.length >= 2) {
+    for (const hr of getSystemHomeruns(s)) {
       hasAnyDrawnDcRaceway = true;
       let pathLen2D = 0;
-      for (let i = 0; i < s.homerunRaceway.path.length - 1; i++) {
-        pathLen2D += calculateGeodeticDistanceM(s.homerunRaceway.path[i], s.homerunRaceway.path[i + 1]);
+      for (let i = 0; i < hr.path.length - 1; i++) {
+        pathLen2D += calculateGeodeticDistanceM(hr.path[i], hr.path[i + 1]);
       }
-      const elevM = Math.abs(s.homerunRaceway.elevationChangeM ?? 0);
+      const elevM = Math.abs(hr.elevationChangeM ?? 0);
       let distToInv = 0;
       if (s.inverterLocation) {
-        const exitPt = s.homerunRaceway.path[s.homerunRaceway.path.length - 1];
+        const exitPt = hr.path[hr.path.length - 1];
         const rawDist = calculateGeodeticDistanceM(exitPt, s.inverterLocation);
         distToInv = rawDist > 5000 ? 0 : rawDist;
       }
       totalDcRacewayM += (pathLen2D + elevM + distToInv);
-      totalDcRacewayBends += Math.max(1, s.homerunRaceway.path.length - 2) + (elevM > 0 ? 2 : 0);
+      totalDcRacewayBends += Math.max(1, hr.path.length - 2) + (elevM > 0 ? 2 : 0);
     }
   }
 

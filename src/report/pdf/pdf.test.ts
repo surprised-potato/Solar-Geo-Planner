@@ -5,6 +5,8 @@ import { collectReportBundleData } from '../pdfReportGenerator';
 import { ReportExportOptions } from '../reportTypes';
 import { ReportCtx, pdfSafe, php } from './context';
 import { drawTable } from './table';
+import { pickSldPaper, SLD_MIN_MM_PER_PX } from './sections/sldBoq';
+import { generatePvsystPdf } from '../pdfReportGenerator';
 import { buildDesignChecks, computeMonthlyPerformance, overallStatus } from './metrics';
 
 const options: ReportExportOptions = {
@@ -98,5 +100,38 @@ describe('buildDesignChecks', () => {
     const bad = buildDesignChecks(s.sldModel, weak, s.module);
     expect(bad[0].status).toBe(s.sldModel.strings.length ? 'FAIL' : 'N/A');
     if (s.sldModel.strings.length) expect(overallStatus(bad)).toBe('FAIL');
+  });
+});
+
+describe('SLD paper selection', () => {
+  it('uses A3 for a typical diagram and A2 for a very large one', () => {
+    const typical = pickSldPaper(2980, 2088);
+    expect(typical.format).toBe('a3');
+    expect(typical.landscape).toBe(true);
+    expect(typical.mmPerPx).toBeGreaterThanOrEqual(SLD_MIN_MM_PER_PX);
+
+    const tall = pickSldPaper(2980, 6000);
+    expect(tall.landscape).toBe(false);
+    expect(tall.format).toBe('a2');
+
+    // A2 is the largest size we use, even when text would still be small there
+    expect(pickSldPaper(3550, 20000).format).toBe('a2');
+  });
+
+  it('puts the SLD sheet on a larger page than the rest of the report', async () => {
+    const store = makeStore();
+    const doc = await generatePvsystPdf(store, { ...options, includeBoq: false });
+    const sizes: number[] = [];
+    for (let i = 1; i <= doc.getNumberOfPages(); i++) {
+      const mb = doc.getPageInfo(i).pageContext.mediaBox;
+      sizes.push(Math.round(Math.max(mb.topRightX, mb.topRightY)));
+    }
+    // A4 long edge = 842pt; A3 = 1191pt; A2 = 1684pt
+    expect(sizes[0]).toBe(842);
+    const sldIdx = sizes.findIndex(v => v > 842);
+    expect(sldIdx).toBeGreaterThan(0);
+    expect([1191, 1684]).toContain(sizes[sldIdx]);
+    // every other page stays A4
+    sizes.forEach((v, i) => { if (i !== sldIdx) expect(v).toBe(842); });
   });
 });

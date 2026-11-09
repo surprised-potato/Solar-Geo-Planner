@@ -66,12 +66,15 @@ export function updateSelectionHud(this: MapController): void {
   // 2. Homerun selected
   if (this.selectedHomerunSystemId) {
     const sys = this.store.getSystem(this.selectedHomerunSystemId);
-    if (sys && sys.homerunRaceway) {
+    const hr = sys ? (this.store.getSystemHomerun(sys.id, this.selectedHomerunId || undefined) || sys.homerunRaceway) : null;
+    if (sys && hr) {
+      const all = this.store.getSystemHomeruns(sys.id);
+      const label = all.length > 1 ? ` #${all.findIndex(h => h.id === hr.id) + 1} of ${all.length}` : '';
       hud.hidden = false;
       if (badge) badge.textContent = '🛤️';
-      if (title) title.textContent = `Homerun Trunk (${sys.name})`;
-      const pathLen = sys.homerunRaceway.path.length;
-      if (sub) sub.textContent = `Shared Raceway • ${pathLen} nodes • Drop: ${sys.homerunRaceway.elevationChangeM}m`;
+      if (title) title.textContent = `Homerun Trunk${label} (${sys.name})`;
+      const pathLen = hr.path.length;
+      if (sub) sub.textContent = `Shared Raceway • ${pathLen} nodes • Drop: ${hr.elevationChangeM}m`;
       return;
     }
   }

@@ -63,6 +63,26 @@ export function attachHomeTabListeners(this: RibbonUI, zoneId?: string): void {
     this.mapController?.zoomToZone(zoneSelect.value);
   });
 
+  const num = (id: string, fallback: number): number => {
+    const v = parseFloat((document.getElementById(id) as HTMLInputElement | null)?.value ?? '');
+    return Number.isFinite(v) ? v : fallback;
+  };
+  document.getElementById('ribbon-btn-copy')?.addEventListener('click', () => { this.store.copySelectedZones(); this.store.notify(); });
+  document.getElementById('ribbon-btn-cut')?.addEventListener('click', () => { this.store.cutSelectedZones(); });
+  document.getElementById('ribbon-btn-paste')?.addEventListener('click', () => { this.store.pasteZones(); });
+  document.getElementById('ribbon-btn-duplicate')?.addEventListener('click', () => { this.store.duplicateSelectedZones(); });
+  document.getElementById('ribbon-btn-flip-h')?.addEventListener('click', () => { this.store.flipSelectedZones('horizontal'); });
+  document.getElementById('ribbon-btn-flip-v')?.addEventListener('click', () => { this.store.flipSelectedZones('vertical'); });
+  document.getElementById('ribbon-btn-move')?.addEventListener('click', () => {
+    this.store.moveSelectedZones(num('ribbon-move-east', 0), num('ribbon-move-north', 0));
+  });
+  document.getElementById('ribbon-btn-rotate-cw')?.addEventListener('click', () => {
+    this.store.rotateSelectedZones(num('ribbon-rotate-deg', 15));
+  });
+  document.getElementById('ribbon-btn-rotate-ccw')?.addEventListener('click', () => {
+    this.store.rotateSelectedZones(-num('ribbon-rotate-deg', 15));
+  });
+
   document.getElementById('ribbon-btn-select-all')?.addEventListener('click', () => {
     const allZones = this.store.getZones();
     const selZones = this.store.getSelectedZones();

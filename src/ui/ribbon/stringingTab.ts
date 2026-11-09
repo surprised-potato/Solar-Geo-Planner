@@ -25,7 +25,12 @@ export function renderStringingTab(this: RibbonUI, ctx: ZoneTabContext): string 
   const isDrawingInv = this.store.drawingMode === 'inverter';
   const isDrawingRaceway = this.store.drawingMode === 'raceway';
 
-  const activeHomerun = (zone && this.store.getHomerunForZone(zone.id)) || activeSystem?.homerunRaceway;
+  const systemHomeruns = this.store.getSystemHomeruns(activeSystem?.id);
+  const selectedHomerunId = this.mapController?.selectedHomerunId;
+  const activeHomerun =
+    (selectedHomerunId && systemHomeruns.find(h => h.id === selectedHomerunId)) ||
+    (zone && this.store.getHomerunForZone(zone.id)) ||
+    activeSystem?.homerunRaceway;
   let homerunPathLen = 0;
   if (activeHomerun && activeHomerun.path && activeHomerun.path.length >= 2) {
     for (let i = 0; i < activeHomerun.path.length - 1; i++) {
@@ -179,13 +184,13 @@ export function renderStringingTab(this: RibbonUI, ctx: ZoneTabContext): string 
         <div class="cad-pod-body">
           <div class="cad-field-row">
             <button id="ribbon-btn-draw-raceway" class="btn btn-xs ${isDrawingRaceway ? 'btn-primary active-pulse' : 'btn-outline warning'}" title="Draw homerun conduit/cable tray polyline independent of arrays - all arrays auto-connect!">
-              ${isDrawingRaceway ? '✅ Finish Homerun' : activeHomerun ? '✏️ Redraw Homerun' : '🛤️ Draw Homerun'}
+              ${isDrawingRaceway ? '✅ Finish Homerun' : systemHomeruns.length > 0 ? `➕ Add Homerun (${systemHomeruns.length})` : '🛤️ Draw Homerun'}
             </button>
             ${
               activeHomerun
                 ? `
               <button id="ribbon-btn-zoom-raceway" class="btn btn-xs btn-outline" title="Zoom to homerun path on map">🎯 View</button>
-              <button id="ribbon-btn-clear-raceway" class="btn-icon xs danger" title="Clear homerun raceway">✕</button>
+              <button id="ribbon-btn-clear-raceway" class="btn-icon xs danger" title="Delete the selected homerun (all homeruns of this system if none is selected)">✕</button>
             `
                 : ''
             }
@@ -199,7 +204,7 @@ export function renderStringingTab(this: RibbonUI, ctx: ZoneTabContext): string 
           </div>
         </div>
         <div class="cad-pod-footer">
-          <span class="cad-hint-text">${activeHomerun ? `⚡ Auto-connected: ${activeHomerun.path.length} nodes recorded` : 'Independent homerun trunk'}</span>
+          <span class="cad-hint-text">${activeHomerun ? `⚡ ${systemHomeruns.length > 1 ? `${systemHomeruns.length} homeruns • strings tap the nearest` : 'Auto-connected'}: ${activeHomerun.path.length} nodes recorded` : 'Independent homerun trunk'}</span>
         </div>
       </div>
 

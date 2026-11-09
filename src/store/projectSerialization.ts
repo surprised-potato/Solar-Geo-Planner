@@ -3,6 +3,7 @@
  */
 import { ArrayZone, GENERIC_INVERTER_PRESETS, ProjectData, SolarPanelObject } from '../types/solar';
 import type { ProjectStore } from './projectStore';
+import { getSystemHomeruns } from '../geo/stringCabling';
 import { sanitizeProjectData } from '../utils/sanitizeProjectData';
 
 export function exportProjectJson(this: ProjectStore, compact: boolean = false): string {
@@ -166,20 +167,20 @@ export function exportProjectGeoJson(this: ProjectStore): string {
   }
 
   for (const sys of this.getSystems()) {
-    if (sys.homerunRaceway && sys.homerunRaceway.path && sys.homerunRaceway.path.length >= 2) {
+    for (const hr of getSystemHomeruns(sys)) {
       features.push({
         type: 'Feature',
         properties: {
           type: 'SharedHomerunTrunk',
-          id: sys.homerunRaceway.id,
-          name: sys.homerunRaceway.name || `Homerun Trunk (${sys.name})`,
+          id: hr.id,
+          name: hr.name || `Homerun Trunk (${sys.name})`,
           systemId: sys.id,
           systemName: sys.name,
-          elevationChangeM: sys.homerunRaceway.elevationChangeM
+          elevationChangeM: hr.elevationChangeM
         },
         geometry: {
           type: 'LineString',
-          coordinates: sys.homerunRaceway.path.map(p => [p.lng, p.lat])
+          coordinates: hr.path.map(p => [p.lng, p.lat])
         }
       });
     }

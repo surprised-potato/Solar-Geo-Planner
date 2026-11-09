@@ -28,7 +28,7 @@ import { calculateSolarSystemYield, SolarYieldResult } from '../geo/solarYield';
 import { createDefaultLoadProfile, scaleAnnualLoad, ARCHETYPE_DIURNAL_CURVES } from '../geo/loadProfile';
 import { simulateSolarAndLoadMatching, SimulationResult, SimulationOptions } from '../geo/energySimulation';
 import { generateBoqFromRegistryAndSld, recalculateDupaItem } from '../geo/boqCalculator';
-import { computePolygonAreaSqM } from '../geo/projection';
+import { computePolygonAreaSqM, computePolygonCentroid } from '../geo/projection';
 import { sanitizeColor, sanitizeIdentifier } from '../utils/sanitizeProjectData';
 import {
   exportProjectJson as exportProjectJsonImpl,
@@ -55,8 +55,21 @@ import {
   matchZoneProperties as matchZonePropertiesImpl,
   optimizeZoneGridShift as optimizeZoneGridShiftImpl,
   optimizeSelectedZonesGridShift as optimizeSelectedZonesGridShiftImpl,
-  regenerateZonePanels as regenerateZonePanelsImpl
+  regenerateZonePanels as regenerateZonePanelsImpl,
+  copySelectedZones as copySelectedZonesImpl,
+  pasteZones as pasteZonesImpl,
+  ClipboardZone
 } from './zoneActions';
+import { getSystemHomeruns as getSystemHomerunsImpl, pickNearestHomerun as pickNearestHomerunImpl } from '../geo/stringCabling';
+import {
+  moveSelectedZones as moveSelectedZonesImpl,
+  moveSelectedZonesTo as moveSelectedZonesToImpl,
+  rotateSelectedZones as rotateSelectedZonesImpl,
+  flipSelectedZones as flipSelectedZonesImpl,
+  duplicateSelectedZones as duplicateSelectedZonesImpl,
+  cutSelectedZones as cutSelectedZonesImpl,
+  FlipAxis
+} from './zoneTransforms';
 import {
   getSystemAcFeederSummary as getSystemAcFeederSummaryImpl,
   getStringCables as getStringCablesImpl,
@@ -116,6 +129,8 @@ export class ProjectStore {
   public selectedZoneIds: Set<string> = new Set();
   public selectedKeepOutId: string | null = null;
   public selectedPanelId: string | null = null;
+  public zoneClipboard: ClipboardZone[] = [];
+  public pasteCount = 0;
   public drawingMode: DrawingMode = 'none';
   public drawingMountType: MountType = 'roof';
   public matchPropsSourceZoneId: string | null = null;
@@ -604,50 +619,101 @@ export class ProjectStore {
     this.notify();
   }
 
-  public updateSystemHomerunVertices(systemId: string, path: LatLngPoint[]): void {
+  /** All homerun trunks of a system (primary first, then extras). */
+  public getSystemHomeruns(systemId?: string): RacewayConfig[] {
+    const sys = this.systems.get(systemId || this.selectedSystemId || '');
+    return sys ? getSystemHomerunsImpl(sys) : [];
+  }
+
+  private findHomerun(systemId: string, homerunId?: string): RacewayConfig | null {
     const sys = this.systems.get(systemId);
-    if (!sys || !sys.homerunRaceway) return;
-    sys.homerunRaceway.path = path;
+    if (!sys) return null;
+    if (!homerunId) return sys.homerunRaceway || sys.extraHomeruns?.[0] || null;
+    return getSystemHomerunsImpl(sys).find(h => h.id === homerunId) || null;
+  }
+
+  /**
+   * Adds another homerun trunk to the system (the first one becomes the primary).
+   * Returns the new trunk.
+   */
+  public addSystemHomerun(
+    systemId: string,
+    path: LatLngPoint[],
+    elevationChangeM: number = 0,
+    name?: string
+  ): RacewayConfig | null {
+    const sys = this.systems.get(systemId);
+    if (!sys) return null;
+    const count = getSystemHomerunsImpl(sys).length;
+    const hr: RacewayConfig = {
+      id: `rw_sys_${systemId}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      name: name || (count === 0 ? `Homerun (${sys.name})` : `Homerun ${count + 1} (${sys.name})`),
+      path,
+      elevationChangeM: Number(elevationChangeM) || 0,
+      systemId
+    };
+    if (!sys.homerunRaceway) {
+      sys.homerunRaceway = hr;
+    } else {
+      sys.extraHomeruns = [...(sys.extraHomeruns || []), hr];
+    }
+    this.notify();
+    return hr;
+  }
+
+  public updateSystemHomerunVertices(systemId: string, path: LatLngPoint[], homerunId?: string): void {
+    const hr = this.findHomerun(systemId, homerunId);
+    if (!hr) return;
+    hr.path = path;
     this.notify();
   }
 
-  public addSystemHomerunVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint): void {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.homerunRaceway) return;
-    const newPath = [...sys.homerunRaceway.path];
+  public addSystemHomerunVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint, homerunId?: string): void {
+    const hr = this.findHomerun(systemId, homerunId);
+    if (!hr) return;
+    const newPath = [...hr.path];
     newPath.splice(insertAfterIndex + 1, 0, point);
-    this.updateSystemHomerunVertices(systemId, newPath);
+    this.updateSystemHomerunVertices(systemId, newPath, homerunId);
   }
 
-  public deleteSystemHomerunVertex(systemId: string, vertexIndex: number): boolean {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.homerunRaceway || sys.homerunRaceway.path.length <= 2) return false;
-    const newPath = sys.homerunRaceway.path.filter((_, idx) => idx !== vertexIndex);
-    this.updateSystemHomerunVertices(systemId, newPath);
+  public deleteSystemHomerunVertex(systemId: string, vertexIndex: number, homerunId?: string): boolean {
+    const hr = this.findHomerun(systemId, homerunId);
+    if (!hr || hr.path.length <= 2) return false;
+    const newPath = hr.path.filter((_, idx) => idx !== vertexIndex);
+    this.updateSystemHomerunVertices(systemId, newPath, homerunId);
     return true;
   }
 
-  public setSystemHomerunElevation(systemId: string, elevationM: number): void {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.homerunRaceway) return;
-    sys.homerunRaceway.elevationChangeM = Number(elevationM) || 0;
+  public setSystemHomerunElevation(systemId: string, elevationM: number, homerunId?: string): void {
+    const hr = this.findHomerun(systemId, homerunId);
+    if (!hr) return;
+    hr.elevationChangeM = Number(elevationM) || 0;
     this.notify();
   }
 
-  public clearSystemHomerun(systemId: string): void {
+  /** Removes one homerun trunk by id, or every trunk of the system when no id is given. */
+  public clearSystemHomerun(systemId: string, homerunId?: string): void {
     const sys = this.systems.get(systemId);
     if (!sys) return;
-    sys.homerunRaceway = null;
+    if (!homerunId) {
+      sys.homerunRaceway = null;
+      sys.extraHomeruns = [];
+    } else if (sys.homerunRaceway?.id === homerunId) {
+      // Promote the next trunk, if any, to primary.
+      const [next, ...rest] = sys.extraHomeruns || [];
+      sys.homerunRaceway = next ?? null;
+      sys.extraHomeruns = rest;
+    } else {
+      sys.extraHomeruns = (sys.extraHomeruns || []).filter(h => h.id !== homerunId);
+    }
     this.notify();
   }
 
-  public getSystemHomerun(systemId?: string): RacewayConfig | null {
+  public getSystemHomerun(systemId?: string, homerunId?: string): RacewayConfig | null {
     const targetSysId = systemId || this.selectedSystemId;
-    if (targetSysId) {
-      const sys = this.systems.get(targetSysId);
-      return sys?.homerunRaceway || null;
-    }
-    return null;
+    if (!targetSysId) return null;
+    if (homerunId) return this.findHomerun(targetSysId, homerunId);
+    return this.systems.get(targetSysId)?.homerunRaceway || null;
   }
 
   public getHomerunForZone(zoneId: string): RacewayConfig | null {
@@ -658,6 +724,10 @@ export class ProjectStore {
     }
     if (zone.systemId) {
       const sys = this.systems.get(zone.systemId);
+      const homeruns = getSystemHomerunsImpl(sys);
+      if (homeruns.length > 1 && zone.vertices.length > 0) {
+        return pickNearestHomerunImpl(homeruns, computePolygonCentroid(zone.vertices)) || sys?.homerunRaceway || null;
+      }
       return sys?.homerunRaceway || null;
     }
     return null;
@@ -958,6 +1028,39 @@ export class ProjectStore {
       this.selectedZoneIds.clear();
     }
     this.notify();
+  }
+
+  public copySelectedZones(): number {
+    this.pasteCount = 0;
+    return copySelectedZonesImpl.call(this);
+  }
+
+  public moveSelectedZones(eastM: number, northM: number): number {
+    return moveSelectedZonesImpl.call(this, eastM, northM);
+  }
+
+  public moveSelectedZonesTo(target: LatLngPoint): number {
+    return moveSelectedZonesToImpl.call(this, target);
+  }
+
+  public rotateSelectedZones(deg: number, pivot?: LatLngPoint): number {
+    return rotateSelectedZonesImpl.call(this, deg, pivot);
+  }
+
+  public flipSelectedZones(axis: FlipAxis): number {
+    return flipSelectedZonesImpl.call(this, axis);
+  }
+
+  public duplicateSelectedZones(): ArrayZone[] {
+    return duplicateSelectedZonesImpl.call(this);
+  }
+
+  public cutSelectedZones(): number {
+    return cutSelectedZonesImpl.call(this);
+  }
+
+  public pasteZones(anchor?: LatLngPoint): ArrayZone[] {
+    return pasteZonesImpl.call(this, anchor);
   }
 
   public addZone(

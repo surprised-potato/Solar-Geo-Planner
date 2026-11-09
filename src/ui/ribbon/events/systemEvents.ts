@@ -114,14 +114,17 @@ export function attachSystemListeners(this: RibbonUI, zoneId?: string): void {
 
   document.getElementById('ribbon-btn-clear-raceway')?.addEventListener('click', () => {
     if (zoneId) this.store.clearZoneRaceway(zoneId);
-    if (systemId) this.store.clearSystemHomerun(systemId);
+    if (systemId) {
+      this.store.clearSystemHomerun(systemId, this.mapController?.selectedHomerunId || undefined);
+      if (this.mapController) this.mapController.selectedHomerunId = null;
+    }
   });
 
   const racewayElevInput = document.getElementById('ribbon-raceway-elev') as HTMLInputElement;
   racewayElevInput?.addEventListener('change', () => {
     const elev = Number(racewayElevInput.value) || 0;
     if (zoneId) this.store.setZoneElevationDelta(zoneId, elev);
-    if (systemId) this.store.setSystemHomerunElevation(systemId, elev);
+    if (systemId) this.store.setSystemHomerunElevation(systemId, elev, this.mapController?.selectedHomerunId || undefined);
   });
 
   const invElevInput = document.getElementById('ribbon-inv-elevation') as HTMLInputElement;

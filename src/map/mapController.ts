@@ -43,11 +43,14 @@ export class MapController {
   store: ProjectStore;
   isInteractingMapHandle: boolean = false;
   selectedHomerunSystemId: string | null = null;
+  selectedHomerunId: string | null = null;
   selectedRacewayZoneId: string | null = null;
   selectedInverterSystemId: string | null = null;
   selectedAcInterconnectionSystemId: string | null = null;
   selectedAcRacewaySystemId: string | null = null;
   selectedTableId: string | null = null;
+  lastCursorLatLng: LatLngPoint | null = null;
+  cursorOverMap = false;
 
   zoneLayerGroup: L.LayerGroup;
   keepOutLayerGroup: L.LayerGroup;
@@ -84,6 +87,7 @@ export class MapController {
   private lastRenderedSelectedZoneId: string | null = null;
   private lastRenderedSelectedZoneIds: Set<string> = new Set();
   private lastRenderedHomerunSystemId: string | null = null;
+  private lastRenderedHomerunId: string | null = null;
   private lastRenderedRacewayZoneId: string | null = null;
 
   constructor(containerId: string, store: ProjectStore) {
@@ -365,7 +369,7 @@ export class MapController {
 
   public zoomToRaceway(zoneId?: string, systemId?: string): void {
     const homerun = (zoneId ? this.store.getHomerunForZone(zoneId) : null)
-      || this.store.getSystemHomerun(systemId);
+      || this.store.getSystemHomerun(systemId, this.selectedHomerunId || undefined);
     if (!homerun || !homerun.path || homerun.path.length === 0) return;
     const latlngs = homerun.path.map((p: LatLngPoint) => [p.lat, p.lng] as [number, number]);
     const bounds = L.latLngBounds(latlngs);
@@ -481,6 +485,7 @@ export class MapController {
       this.lastRenderedSelectedZoneId = this.store.selectedZoneId;
       this.lastRenderedSelectedZoneIds = new Set(this.store.selectedZoneIds);
       this.lastRenderedHomerunSystemId = this.selectedHomerunSystemId;
+      this.lastRenderedHomerunId = this.selectedHomerunId;
       this.lastRenderedRacewayZoneId = this.selectedRacewayZoneId;
       return;
     }
@@ -529,6 +534,7 @@ export class MapController {
     if (
       zoneSelectionChanged ||
       this.lastRenderedHomerunSystemId !== this.selectedHomerunSystemId ||
+      this.lastRenderedHomerunId !== this.selectedHomerunId ||
       this.lastRenderedRacewayZoneId !== this.selectedRacewayZoneId
     ) {
       this.renderTiltArrows();
@@ -550,6 +556,7 @@ export class MapController {
     this.lastRenderedSelectedZoneId = this.store.selectedZoneId;
     this.lastRenderedSelectedZoneIds = new Set(this.store.selectedZoneIds);
     this.lastRenderedHomerunSystemId = this.selectedHomerunSystemId;
+    this.lastRenderedHomerunId = this.selectedHomerunId;
     this.lastRenderedRacewayZoneId = this.selectedRacewayZoneId;
   }
 

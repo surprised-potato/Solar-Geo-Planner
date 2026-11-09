@@ -2,7 +2,7 @@
  * DC raceways, homeruns, string wiring lines and AC feeder raceway layers.
  */
 import L from 'leaflet';
-import { chainAdjacentPanels, getHomerunExitDirection } from '../../geo/stringCabling';
+import { chainAdjacentPanels, getHomerunExitDirection, getSystemHomeruns, pickNearestHomerun } from '../../geo/stringCabling';
 import type { MapController } from '../mapController';
 import { escapeHtml } from '../../utils/html';
 
@@ -19,10 +19,14 @@ export function renderRaceways(this: MapController): void {
 
   // 1. Render Shared System Homerun Trunks
   for (const sys of systems) {
-    const homerun = sys.homerunRaceway;
-    if (!homerun || !homerun.path || homerun.path.length < 2) continue;
-
-    const isSelected = this.selectedHomerunSystemId === sys.id || (!selectedZoneId && selectedSystemId === sys.id);
+   const sysHomeruns = getSystemHomeruns(sys);
+   for (const homerun of sysHomeruns) {
+    const homerunId = homerun.id;
+    const trunkIdx = sysHomeruns.indexOf(homerun);
+    const trunkLabel = sysHomeruns.length > 1 ? ` #${trunkIdx + 1}` : '';
+    const isSelected = this.selectedHomerunSystemId === sys.id
+      ? (!this.selectedHomerunId || this.selectedHomerunId === homerunId)
+      : (!selectedZoneId && selectedSystemId === sys.id && trunkIdx === 0);
     const pathPts = homerun.path.map(p => [p.lat, p.lng] as [number, number]);
 
     let pathLen2D = 0;
@@ -34,7 +38,7 @@ export function renderRaceways(this: MapController): void {
     }
     const elevM = Math.abs(homerun.elevationChangeM);
     const totalRunM = (pathLen2D + elevM).toFixed(1);
-    const connectedZones = zones.filter(z => z.systemId === sys.id && !z.raceway);
+    const connectedZones = zones.filter(z => z.systemId === sys.id && !z.raceway && this.store.getHomerunForZone(z.id)?.id === homerunId);
     const totalPanels = connectedZones.reduce((sum, z) => sum + z.activePanelCount, 0);
 
     // Outer casing for high visibility
@@ -61,6 +65,7 @@ export function renderRaceways(this: MapController): void {
     const onHomerunSelect = (e: L.LeafletMouseEvent) => {
       L.DomEvent.stopPropagation(e);
       this.selectedHomerunSystemId = sys.id;
+      this.selectedHomerunId = homerunId;
       this.selectedRacewayZoneId = null;
       this.selectedInverterSystemId = null;
       this.store.selectKeepOut(null);
@@ -71,7 +76,7 @@ export function renderRaceways(this: MapController): void {
     conduit.on('click', onHomerunSelect);
 
     conduit.bindTooltip(
-      `<strong>🛤️ Shared Homerun Trunk (${escapeHtml(sys.name)})</strong><br/>Path Length: ${pathLen2D.toFixed(1)}m | Elev Drop: ${elevM}m | Total Run: ${totalRunM}m<br/>Auto-Connected Arrays: ${connectedZones.length} (${totalPanels} modules)<br/><small>Click to edit nodes & bends</small>`,
+      `<strong>🛤️ Shared Homerun Trunk${trunkLabel} (${escapeHtml(sys.name)})</strong><br/>Path Length: ${pathLen2D.toFixed(1)}m | Elev Drop: ${elevM}m | Total Run: ${totalRunM}m<br/>Auto-Connected Arrays: ${connectedZones.length} (${totalPanels} modules)<br/><small>Click to edit nodes & bends</small>`,
       { sticky: true, className: 'solar-tooltip' }
     );
 
@@ -86,7 +91,7 @@ export function renderRaceways(this: MapController): void {
     const sysShortName = escapeHtml(sys.name.split(':')[0].trim());
     const startBadge = L.divIcon({
       className: 'raceway-entrance-icon',
-      html: `<div class="raceway-marker-badge homerun" style="border-left: 4px solid ${sys.color || '#f59e0b'};" title="Shared Homerun Trunk (${escapeHtml(sys.name)})">🛤️ ${sysShortName} TRUNK</div>`,
+      html: `<div class="raceway-marker-badge homerun" style="border-left: 4px solid ${sys.color || '#f59e0b'};" title="Shared Homerun Trunk (${escapeHtml(sys.name)})">🛤️ ${sysShortName} TRUNK${trunkLabel}</div>`,
       iconSize: [120, 20],
       iconAnchor: [60, 10]
     });
@@ -135,9 +140,9 @@ export function renderRaceways(this: MapController): void {
 
         handle.on('drag', (e: L.LeafletEvent) => {
           const dragPos = (e.target as L.Marker).getLatLng();
-          const currentSys = this.store.getSystem(sys.id);
-          if (currentSys?.homerunRaceway) {
-            const updatedPath = [...currentSys.homerunRaceway.path];
+          const currentHr = this.store.getSystemHomerun(sys.id, homerunId);
+          if (currentHr) {
+            const updatedPath = [...currentHr.path];
             updatedPath[idx] = { lat: dragPos.lat, lng: dragPos.lng };
             const polyCoords = updatedPath.map(p => [p.lat, p.lng] as [number, number]);
             conduit.setLatLngs(polyCoords);
@@ -150,19 +155,19 @@ export function renderRaceways(this: MapController): void {
         handle.on('dragend', (e: L.LeafletEvent) => {
           this.isInteractingMapHandle = false;
           const dragPos = (e.target as L.Marker).getLatLng();
-          const currentSys = this.store.getSystem(sys.id);
-          if (currentSys?.homerunRaceway) {
-            const updatedPath = [...currentSys.homerunRaceway.path];
+          const currentHr = this.store.getSystemHomerun(sys.id, homerunId);
+          if (currentHr) {
+            const updatedPath = [...currentHr.path];
             updatedPath[idx] = { lat: dragPos.lat, lng: dragPos.lng };
-            this.store.updateSystemHomerunVertices(sys.id, updatedPath);
+            this.store.updateSystemHomerunVertices(sys.id, updatedPath, homerunId);
           }
         });
 
         const deleteNode = (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          const currentSys = this.store.getSystem(sys.id);
-          if (currentSys?.homerunRaceway && currentSys.homerunRaceway.path.length > 2) {
-            this.store.deleteSystemHomerunVertex(sys.id, idx);
+          const currentHr = this.store.getSystemHomerun(sys.id, homerunId);
+          if (currentHr && currentHr.path.length > 2) {
+            this.store.deleteSystemHomerunVertex(sys.id, idx, homerunId);
           } else {
             alert('A homerun path must have at least 2 points.');
           }
@@ -200,12 +205,13 @@ export function renderRaceways(this: MapController): void {
 
         midHandle.on('click', (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          this.store.addSystemHomerunVertex(sys.id, j, { lat: midLat, lng: midLng });
+          this.store.addSystemHomerunVertex(sys.id, j, { lat: midLat, lng: midLng }, homerunId);
         });
 
         this.racewayVertexGroup.addLayer(midHandle);
       }
     }
+   }
   }
 
   // 2. Render Any Dedicated Array Raceways
@@ -447,7 +453,7 @@ export function renderStringLines(this: MapController): void {
     const sys = this.store.getSystem(orderedPanels[0].systemId);
     const zone = this.store.getZone(orderedPanels[0].zoneId);
     const zoneRaceway = (zone && zone.systemId === sys?.id) ? zone.raceway : null;
-    const activeHomerun = zoneRaceway || sys?.homerunRaceway;
+    const activeHomerun = zoneRaceway || (sys ? pickNearestHomerun(getSystemHomeruns(sys), orderedPanels[0].centroid) : null);
     const hasRaceway = Boolean(activeHomerun && activeHomerun.path && activeHomerun.path.length >= 2);
 
     if (sys && showHomerun) {

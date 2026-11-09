@@ -63,7 +63,7 @@ export function renderRacewaysTable(
               : filteredZones
                   .map(z => {
                     const sys = this.store.getSystem(z.systemId);
-                    const activeHomerun = z.raceway || sys?.homerunRaceway;
+                    const activeHomerun = z.raceway || this.store.getHomerunForZone(z.id);
                     const hasRaceway = Boolean(activeHomerun && activeHomerun.path && activeHomerun.path.length >= 2);
                     const isShared = !z.raceway && Boolean(sys?.homerunRaceway);
 

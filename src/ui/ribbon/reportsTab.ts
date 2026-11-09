@@ -19,6 +19,9 @@ export function renderReportsTab(this: RibbonUI): string {
           <button id="ribbon-btn-gen-pdf" class="btn btn-primary" style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; width: 100%; padding: 7px 12px; margin-bottom: 6px;" title="Generate PVsyst-Style Multi-Page PDF Engineering Report">
             <span style="font-size: 15px;">📄</span> Generate Engineering PDF Report
           </button>
+          <button id="ribbon-btn-gen-stringing" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; width: 100%; padding: 6px 12px; margin-bottom: 6px;" title="Export an installer guide: every array with its strings drawn on the module layout">
+            <span style="font-size: 14px;">🔌</span> Array Stringing Guide (PDF)
+          </button>
           <div class="cad-control-row compact-gap">
             <button id="ribbon-btn-rep-boq" class="btn btn-xs btn-outline flex-1" title="Open Construction BOQ &amp; DUPA Costing Workspace">
               💰 BOQ &amp; Costing

@@ -19,6 +19,7 @@ export function renderHomeTab(
   currentSystemSummary: any
 ): string {
   const drawingMountType = this.store.drawingMountType;
+  const hasSel = selectedZones.length > 0;
   const sysColor = currentSystem?.color || '#0284c7';
   const dcKwp = isMultiSelect ? totalSelectedKwp : (zone ? zone.totalKwp : (currentSystemSummary?.totalKwp || 0));
   const panels = isMultiSelect ? totalSelectedPanels : (zone ? zone.activePanelCount : (currentSystemSummary?.totalActivePanels || 0));
@@ -112,6 +113,37 @@ export function renderHomeTab(
         </div>
         <div class="cad-pod-footer">
           <span class="cad-hint-text">${isMultiSelect ? `Batch editing active: controls adjust all ${selectedZones.length} arrays` : zone ? `${escapeHtml(zone.name)} (${zone.activePanelCount} panels • ${zone.totalKwp} kWp)` : 'Select an array from map or dropdown'}</span>
+        </div>
+      </div>
+
+      <!-- Pod 2b: Array Manipulation -->
+      <div class="cad-pod wide">
+        <div class="cad-pod-header">
+          <span class="cad-pod-title">🛠️ ARRAY MANIPULATION</span>
+          <span class="cad-pod-tag ${hasSel ? 'accent' : ''}">${hasSel ? `${selectedZones.length} SELECTED` : 'SELECT AN ARRAY'}</span>
+        </div>
+        <div class="cad-pod-body">
+          <div class="cad-control-row compact-gap">
+            <button id="ribbon-btn-copy" class="btn btn-xs btn-outline flex-1" ${hasSel ? '' : 'disabled'} title="Copy selected arrays (Ctrl+C)">📋 Copy</button>
+            <button id="ribbon-btn-cut" class="btn btn-xs btn-outline flex-1" ${hasSel ? '' : 'disabled'} title="Cut selected arrays (Ctrl+X)">✂️ Cut</button>
+            <button id="ribbon-btn-paste" class="btn btn-xs btn-outline flex-1" ${this.store.zoneClipboard.length ? '' : 'disabled'} title="Paste arrays at the cursor (Ctrl+V)">📥 Paste</button>
+            <button id="ribbon-btn-duplicate" class="btn btn-xs btn-outline flex-1" ${hasSel ? '' : 'disabled'} title="Duplicate selected arrays beside the originals (Ctrl+D)">⧉ Duplicate</button>
+            <button id="ribbon-btn-flip-h" class="btn btn-xs btn-outline flex-1" ${hasSel ? '' : 'disabled'} title="Mirror left/right about the selection centre">⇋ Flip H</button>
+            <button id="ribbon-btn-flip-v" class="btn btn-xs btn-outline flex-1" ${hasSel ? '' : 'disabled'} title="Mirror top/bottom about the selection centre">⇅ Flip V</button>
+          </div>
+          <div class="cad-control-row compact-gap" style="margin-top: 4px; align-items: center;">
+            <label class="cad-hint-text">E</label>
+            <input id="ribbon-move-east" type="number" step="0.5" value="0" class="cad-select-sm" style="width: 56px;" title="Metres east (negative = west)" />
+            <label class="cad-hint-text">N</label>
+            <input id="ribbon-move-north" type="number" step="0.5" value="0" class="cad-select-sm" style="width: 56px;" title="Metres north (negative = south)" />
+            <button id="ribbon-btn-move" class="btn btn-xs btn-outline" ${hasSel ? '' : 'disabled'} title="Move selection by the given metres (arrow keys nudge 1 m, Shift 10 m, Alt 0.1 m)">➡ Move (m)</button>
+            <input id="ribbon-rotate-deg" type="number" step="1" value="15" class="cad-select-sm" style="width: 56px;" title="Rotation step in degrees" />
+            <button id="ribbon-btn-rotate-ccw" class="btn btn-xs btn-outline" ${hasSel ? '' : 'disabled'} title="Rotate counter-clockwise ( [ key )">↺</button>
+            <button id="ribbon-btn-rotate-cw" class="btn btn-xs btn-outline" ${hasSel ? '' : 'disabled'} title="Rotate clockwise ( ] key )">↻</button>
+          </div>
+        </div>
+        <div class="cad-pod-footer">
+          <span class="cad-hint-text">Drag ✥ / ↻ handles on the map &bull; Arrows nudge &bull; [ ] rotate &bull; Ctrl+C/X/V/D/A</span>
         </div>
       </div>
 

@@ -185,8 +185,19 @@ export class PdfReportModalUI {
     }
   }
 
+  /** Describes a system with its key specs so the scope picker name matches what the report shows. */
+  private systemOptionLabel(sys: ReturnType<ProjectStore['getSystems']>[number]): string {
+    const kwp = this.store.getSystemSummary(sys.id).totalKwp;
+    const inv = sys.inverter;
+    return `${sys.name} \u2014 ${kwp.toFixed(1)} kWp \u2022 ${inv.inverterCount || 1}\u00d7${inv.ratedAcPowerKw} kW inverter`;
+  }
+
   public render(): void {
     const systems = this.store.getSystems();
+    // The remembered scope may point at a system that was deleted or belongs to another project.
+    if (this.currentSystemId !== 'all' && !systems.some(s => s.id === this.currentSystemId)) {
+      this.currentSystemId = 'all';
+    }
     const isPreview = this.activeTab === 'preview';
 
     this.container.innerHTML = `
@@ -222,7 +233,7 @@ export class PdfReportModalUI {
                 <span class="toolbar-lbl">Scope:</span>
                 <select id="sel-pdf-preview-system" class="form-input form-input-sm" title="Filter preview scope">
                   <option value="all" ${this.currentSystemId === 'all' ? 'selected' : ''}>All Systems (Consolidated Project Report)</option>
-                  ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.inverter.modelName)})</option>`).join('')}
+                  ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>${escapeHtml(this.systemOptionLabel(s))}</option>`).join('')}
                 </select>
 
                 <label class="checkbox-label checkbox-inline" title="Toggle satellite imagery on Page 1 CAD layout">
@@ -281,7 +292,7 @@ export class PdfReportModalUI {
                   <label for="sel-pdf-system">Target Solar System:</label>
                   <select id="sel-pdf-system" class="form-input">
                     <option value="all" ${this.currentSystemId === 'all' ? 'selected' : ''}>All Systems (Consolidated Project Report)</option>
-                    ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.inverter.modelName)})</option>`).join('')}
+                    ${systems.map(s => `<option value="${s.id}" ${this.currentSystemId === s.id ? 'selected' : ''}>${escapeHtml(this.systemOptionLabel(s))}</option>`).join('')}
                   </select>
                 </div>
               </div>

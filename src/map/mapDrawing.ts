@@ -72,12 +72,13 @@ export function finishDrawing(this: MapController): void {
       || this.store.getSystems()[0];
 
     if (targetSystem) {
-      this.store.setSystemHomerun(
+      const created = this.store.addSystemHomerun(
         targetSystem.id,
         points,
         targetSystem.inverterElevationM || selectedZone?.elevationDeltaM || 0
       );
       this.selectedHomerunSystemId = targetSystem.id;
+      this.selectedHomerunId = created?.id ?? null;
       this.store.selectSystem(targetSystem.id);
     }
   } else if (mode === 'ac_raceway') {
