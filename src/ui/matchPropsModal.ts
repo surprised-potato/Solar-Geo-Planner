@@ -1,7 +1,8 @@
-import { ProjectStore, MatchPropertiesOptions } from '../store/projectStore';
+import { ProjectStore, MatchPropertiesOptions, DEFAULT_MATCH_PROPS_OPTIONS } from '../store/projectStore';
 import { MapController } from '../map/mapController';
 import { getCompassHeading } from '../geo/projection';
 import { escapeHtml } from '../utils/html';
+import { enableBackdropDismiss } from '../utils/dialog';
 
 export class MatchPropsModalUI {
   private dialog: HTMLDialogElement;
@@ -10,18 +11,7 @@ export class MatchPropsModalUI {
 
   private selectedSourceId: string = '';
   private selectedTargetIds: Set<string> = new Set();
-  private options: MatchPropertiesOptions = {
-    matchModule: true,
-    matchMountType: true,
-    matchOrientation: true,
-    matchAzimuth: true,
-    matchTilt: true,
-    matchSpacing: true,
-    matchSetback: true,
-    matchTraverse: true,
-    matchSystem: false,
-    autoOptimize: false
-  };
+  private options: MatchPropertiesOptions = { ...DEFAULT_MATCH_PROPS_OPTIONS };
 
   constructor(store: ProjectStore, mapController?: MapController) {
     this.store = store;
@@ -38,26 +28,7 @@ export class MatchPropsModalUI {
     }
     this.dialog = el;
 
-    this.setupFallbackLightDismiss();
-  }
-
-  private setupFallbackLightDismiss(): void {
-    if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
-      this.dialog.addEventListener('click', (event: MouseEvent) => {
-        if (event.target !== this.dialog) return;
-
-        const rect = this.dialog.getBoundingClientRect();
-        const isDialogContent =
-          rect.top <= event.clientY &&
-          event.clientY <= rect.top + rect.height &&
-          rect.left <= event.clientX &&
-          event.clientX <= rect.left + rect.width;
-
-        if (!isDialogContent) {
-          this.close();
-        }
-      });
-    }
+    enableBackdropDismiss(this.dialog, () => this.close());
   }
 
   public open(sourceZoneId?: string): void {

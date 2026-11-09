@@ -931,38 +931,44 @@ export function clearBasemapCache(): void {
   basemapCache.clear();
 }
 
-/**
- * Fetches satellite imagery tiles covering the CAD view extent and composites them into
- * an offscreen canvas aligned with `computeCadViewTransform`. Returns null if unavailable.
- */
-export async function renderSatelliteBasemap(
-  store: ProjectStore,
-  width: number,
-  height: number,
-  systemId: string = 'all',
-  timeoutMs: number = 8000
-): Promise<HTMLCanvasElement | null> {
-  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+/** Pixel-space description of a view onto the ground, used to composite satellite tiles. */
+export interface BasemapView {
+  width: number;
+  height: number;
+  /** Screen px → geographic position. */
+  toLatLng: (sx: number, sy: number) => LatLngPoint;
+  /** Geographic position → screen px. */
+  toScreenPt: (p: LatLngPoint) => { x: number; y: number };
+  /** Screen pixels per metre (used to pick the tile zoom). */
+  scale: number;
+  lyrs: 'y' | 's';
+  /** Cache key; omit to skip caching. */
+  cacheKey?: string;
+  timeoutMs?: number;
+}
 
-  const t = computeCadViewTransform(store, width, height, systemId);
-  const nw = t.toLatLng(0, 0);
-  const se = t.toLatLng(width, height);
+/**
+ * Composites Google satellite tiles into an offscreen canvas for an arbitrary view.
+ * Returns null if no imagery is available or the canvas is tainted.
+ */
+export async function renderSatelliteBasemapForView(view: BasemapView): Promise<HTMLCanvasElement | null> {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  const { width, height, lyrs, timeoutMs = 8000 } = view;
+
+  const nw = view.toLatLng(0, 0);
+  const se = view.toLatLng(width, height);
   const north = Math.max(nw.lat, se.lat);
   const south = Math.min(nw.lat, se.lat);
   const west = Math.min(nw.lng, se.lng);
   const east = Math.max(nw.lng, se.lng);
   if (![north, south, west, east].every(Number.isFinite)) return null;
 
-  // Google layer type: 's' for pure satellite, 'y' for satellite hybrid with roads/labels (matching Map View default)
-  const lyrs: 'y' | 's' = store.viewFilter?.basemap === 'google-satellite' ? 's' : 'y';
-
-  const cacheKey = `${width}x${height}_${systemId}_${lyrs}_${t.bounds.minX.toFixed(1)}_${t.bounds.maxX.toFixed(1)}_${t.bounds.minY.toFixed(1)}_${t.bounds.maxY.toFixed(1)}_${t.origin.lat.toFixed(5)}_${t.origin.lng.toFixed(5)}`;
-  if (basemapCache.has(cacheKey)) {
-    return basemapCache.get(cacheKey)!;
+  if (view.cacheKey && basemapCache.has(view.cacheKey)) {
+    return basemapCache.get(view.cacheKey)!;
   }
 
   // Pick the zoom whose ground resolution is at least as fine as the canvas resolution
-  const metersPerPx = 1 / t.scale;
+  const metersPerPx = 1 / view.scale;
   const centerLatRad = (((north + south) / 2) * Math.PI) / 180;
   let z = Math.ceil(Math.log2((156543.03392 * Math.cos(centerLatRad)) / metersPerPx));
   z = Math.max(1, Math.min(SATELLITE_MAX_ZOOM, z));
@@ -1015,8 +1021,8 @@ export async function renderSatelliteBasemap(
       jobs.push(
         loadTileImage(url, timeoutMs).then(img => {
           if (!img || isPlaceholderTile(img)) return;
-          const p0 = t.toScreenPt({ lat: tileYToLat(ty, z), lng: tileXToLng(tx, z) });
-          const p1 = t.toScreenPt({ lat: tileYToLat(ty + 1, z), lng: tileXToLng(tx + 1, z) });
+          const p0 = view.toScreenPt({ lat: tileYToLat(ty, z), lng: tileXToLng(tx, z) });
+          const p1 = view.toScreenPt({ lat: tileYToLat(ty + 1, z), lng: tileXToLng(tx + 1, z) });
           // +0.5px overlap hides hairline seams between adjacent tiles
           ctx.drawImage(img, p0.x, p0.y, p1.x - p0.x + 0.5, p1.y - p0.y + 0.5);
           loaded++;
@@ -1033,8 +1039,35 @@ export async function renderSatelliteBasemap(
   } catch (e) {
     return null;
   }
-  basemapCache.set(cacheKey, out);
+  if (view.cacheKey) basemapCache.set(view.cacheKey, out);
   return out;
+}
+
+/**
+ * Fetches satellite imagery tiles covering the CAD view extent and composites them into
+ * an offscreen canvas aligned with `computeCadViewTransform`. Returns null if unavailable.
+ */
+export async function renderSatelliteBasemap(
+  store: ProjectStore,
+  width: number,
+  height: number,
+  systemId: string = 'all',
+  timeoutMs: number = 8000
+): Promise<HTMLCanvasElement | null> {
+  const t = computeCadViewTransform(store, width, height, systemId);
+  // Google layer type: 's' for pure satellite, 'y' for satellite hybrid with roads/labels (matching Map View default)
+  const lyrs: 'y' | 's' = store.viewFilter?.basemap === 'google-satellite' ? 's' : 'y';
+  const cacheKey = `${width}x${height}_${systemId}_${lyrs}_${t.bounds.minX.toFixed(1)}_${t.bounds.maxX.toFixed(1)}_${t.bounds.minY.toFixed(1)}_${t.bounds.maxY.toFixed(1)}_${t.origin.lat.toFixed(5)}_${t.origin.lng.toFixed(5)}`;
+  return renderSatelliteBasemapForView({
+    width,
+    height,
+    toLatLng: t.toLatLng,
+    toScreenPt: t.toScreenPt,
+    scale: t.scale,
+    lyrs,
+    cacheKey,
+    timeoutMs
+  });
 }
 
 /**

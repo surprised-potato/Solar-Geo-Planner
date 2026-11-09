@@ -1,0 +1,369 @@
+/* CAD Interactive Controls */
+.cad-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cad-control-row.compact-gap {
+  gap: 6px;
+}
+
+.cad-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cad-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  height: 5px;
+  background: #1e293b;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cad-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.cad-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.9);
+}
+
+.cad-slider::-webkit-slider-thumb:active {
+  transform: scale(1.25);
+}
+
+.cad-input-unit-wrap {
+  display: flex;
+  align-items: center;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 0 6px 0 0;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.cad-input-unit-wrap:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.cad-input-unit-wrap.sm {
+  width: 78px;
+}
+
+.cad-input-unit-wrap.full {
+  width: 100%;
+}
+
+.cad-unit-prefix {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+  padding-left: 6px;
+  user-select: none;
+}
+
+.cad-num-input {
+  width: 48px;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  padding: 4px 4px 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  text-align: right;
+}
+
+.cad-unit-addon {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  user-select: none;
+}
+
+.cad-text-input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  color: var(--text-main);
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.cad-text-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.cad-segmented-control {
+  display: flex;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.cad-seg-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cad-seg-btn:hover {
+  color: var(--text-main);
+}
+
+.cad-seg-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.cad-preset-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cad-preset-pill {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid #334155;
+  border-radius: 3px;
+  color: #94a3b8;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cad-preset-pill:hover {
+  background: #27354f;
+  color: var(--text-main);
+  border-color: #475569;
+}
+
+.cad-preset-pill.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.cad-footprint-tag {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.cad-select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  max-width: 280px;
+}
+
+.cad-select-sm {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 11px;
+  outline: none;
+  max-width: 220px;
+}
+
+.cad-select-xs {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  outline: none;
+  max-width: 170px;
+}
+
+.cad-action-btn {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #334155;
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cad-action-btn:hover {
+  background: #27354f;
+  border-color: var(--accent-blue);
+}
+
+.cad-action-btn.highlight {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--accent-green);
+}
+
+.cad-action-btn.highlight:hover {
+  background: rgba(16, 185, 129, 0.3);
+  color: #ffffff;
+}
+
+.cad-action-btn.energetic {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: 1px solid #fbbf24;
+  color: #000;
+  font-weight: 700;
+}
+
+.cad-action-btn.energetic:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+/* Telemetry HUD & Badge Layouts */
+.cad-telemetry-hud-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.hud-item {
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.hud-item.highlight {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.hud-label {
+  font-size: 9px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.hud-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.hud-val small {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.cad-kpi-chips-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cad-telemetry-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.cad-telemetry-chip.highlight {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-green);
+}
+
+.cad-horizontal-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cad-obstacle-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--text-main);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cad-obstacle-pill .btn-ribbon-remove-ko {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.cad-obstacle-pill .btn-ribbon-remove-ko:hover {
+  color: #fff;
+}
+
+.cad-empty-msg {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+}
+

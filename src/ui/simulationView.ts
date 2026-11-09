@@ -24,6 +24,8 @@ import {
 import { SolarYieldResult } from '../geo/solarYield';
 import { MONTH_NAMES } from '../geo/loadProfile';
 import { escapeHtml } from '../utils/html';
+import { renderSolarCurveCard as renderSolarCurveCardImpl, renderLoadCurveCard as renderLoadCurveCardImpl, renderDispatchCurveCard as renderDispatchCurveCardImpl } from './simulation/curveCards';
+import { handleExportCsv as handleExportCsvImpl, attachEventListeners as attachEventListenersImpl } from './simulation/simulationEvents';
 
 export interface SimulationWorkspaceCallbacks {
   onOpenSolarYield?: (systemId?: string) => void;
@@ -34,17 +36,17 @@ export interface SimulationWorkspaceCallbacks {
 export type SimulationCurveFilter = 'all' | 'solar' | 'load' | 'dispatch';
 
 export class SimulationWorkspaceUI {
-  private container: HTMLElement;
+  container: HTMLElement;
   private store: ProjectStore;
-  private callbacks?: SimulationWorkspaceCallbacks;
-  private currentSystemId: string = 'all';
+  callbacks?: SimulationWorkspaceCallbacks;
+  currentSystemId: string = 'all';
 
   // Diurnal Simulation Controls
-  private simPeriodOption: SimulationPeriodOption = 'annual';
-  private simWeeklyOption: SimulationWeeklyOption = 'week_avg';
-  private activeCurveView: SimulationCurveFilter = 'all';
-  private importTariffRate: number = 10.50;
-  private exportTariffRate: number = 5.50;
+  simPeriodOption: SimulationPeriodOption = 'annual';
+  simWeeklyOption: SimulationWeeklyOption = 'week_avg';
+  activeCurveView: SimulationCurveFilter = 'all';
+  importTariffRate: number = 10.50;
+  exportTariffRate: number = 5.50;
 
   constructor(
     containerIdOrEl: string | HTMLElement,
@@ -74,45 +76,8 @@ export class SimulationWorkspaceUI {
     this.render();
   }
 
-  private handleExportCsv(simResult: SimulationResult): void {
-    let csv = 'ENGINEERING ENERGY SIMULATION & POWER MATCHING REPORT\n';
-    csv += `Scope,${this.currentSystemId}\n`;
-    csv += `Period,${simResult.selectedPeriodLabel}\n`;
-    csv += `Weekly_Profile,${simResult.selectedWeeklyLabel}\n`;
-    csv += `Retail_Import_Tariff_Php_per_kWh,${this.importTariffRate}\n`;
-    csv += `Feed_In_Export_Credit_Php_per_kWh,${this.exportTariffRate}\n\n`;
-
-    csv += '1. 12-MONTH ENERGY BALANCE & RE SHARE (ANNUAL CALCULATIONS)\n';
-    csv += 'Month,Days,Solar_Gen_kWh,Facility_Load_kWh,Self_Consumed_kWh,Grid_Export_kWh,Grid_Import_kWh,RE_Share_Pct,Self_Sufficiency_Pct,Self_Consumption_Pct\n';
-
-    for (const m of simResult.monthlyRecords) {
-      csv += `${m.monthName},${m.daysInMonth},${m.solarGenerationKwh},${m.facilityLoadKwh},${m.selfConsumedKwh},${m.exportedKwh},${m.importedKwh},${m.reSharePercent}%,${m.selfSufficiencyPercent}%,${m.selfConsumptionPercent}%\n`;
-    }
-
-    csv += `Annual_Total,365,${simResult.annualSolarKwh},${simResult.annualLoadKwh},${simResult.annualSelfConsumedKwh},${simResult.annualExportedKwh},${simResult.annualImportedKwh},${simResult.annualReSharePercent}%,${simResult.annualSelfSufficiencyPercent}%,${simResult.annualSelfConsumptionPercent}%\n\n`;
-
-    csv += '2. 24-HOUR HOURLY DIURNAL DISPATCH & POWER MATCHING (CALCULATIONS)\n';
-    csv += 'Hour,Solar_Gen_kW,Facility_Load_kW,Self_Consumed_kW,Grid_Export_kW,Grid_Import_kW,RE_Coverage_Pct,Self_Consumption_Pct,Status\n';
-    for (const h of simResult.diurnalCurve) {
-      const reCov = h.loadKw > 0 ? ((h.solarKw / h.loadKw) * 100).toFixed(1) : '0.0';
-      const selfRatio = h.solarKw > 0 ? ((h.selfConsumedKw / h.solarKw) * 100).toFixed(1) : '0.0';
-      const status = h.solarKw === 0 ? 'Night Import' : (h.exportKw > 0 ? 'Solar Surplus Export' : 'Solar Deficit Import');
-      csv += `${h.hourLabel},${h.solarKw},${h.loadKw},${h.selfConsumedKw},${h.exportKw},${h.importKw},${reCov}%,${selfRatio}%,${status}\n`;
-    }
-
-    csv += '\n3. NET-BILLING FINANCIAL ECONOMICS SUMMARY\n';
-    csv += `Original_Annual_Bill_Php,${simResult.originalBillPhp}\n`;
-    csv += `New_Annual_Bill_Php,${simResult.newBillPhp}\n`;
-    csv += `Annual_Net_Savings_Php,${simResult.annualSavingsPhp}\n`;
-    csv += `Bill_Reduction_Pct,${simResult.billReductionPercent}%\n`;
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `energy_simulation_${this.currentSystemId}_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  handleExportCsv(simResult: SimulationResult) : void {
+    return handleExportCsvImpl.call(this, simResult);
   }
 
   public render(): void {
@@ -559,283 +524,25 @@ export class SimulationWorkspaceUI {
   /**
    * Renders Curve 1: Solar Generation Curve with strict baseline bottom alignment.
    */
-  private renderSolarCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult): string {
-    return `
-      <div class="eng-curve-card solar-curve">
-        <div class="curve-card-header">
-          <div class="curve-card-title">
-            <span class="curve-dot dot-solar"></span>
-            <strong>1. SOLAR GENERATION CURVE P<sub>solar</sub> (kW)</strong>
-            <span class="curve-meta">&bull; Normalized Solar Bell Curve &bull; Photovoltaic Output</span>
-          </div>
-          <div class="curve-card-stats">
-            <span>Peak: <strong class="text-accent-blue">${simResult.diurnalSummary.peakSolarKw} kW</strong></span>
-            <span>Daily: <strong class="text-accent-blue">${simResult.diurnalSummary.dailySolarKwh.toLocaleString()} kWh</strong></span>
-          </div>
-        </div>
-
-        <div class="eng-chart-box">
-          <div class="eng-chart-plot-row">
-            <!-- Left Y-Axis Scale -->
-            <div class="eng-chart-yaxis">
-              <span>${Math.round(peakVal)} kW</span>
-              <span>${Math.round(peakVal * 0.5)} kW</span>
-              <span>0 kW</span>
-            </div>
-
-            <!-- Plot Area: 24 Strictly Bottom-Aligned Columns -->
-            <div class="eng-chart-bars-wrap">
-              <div class="eng-chart-grid-line line-100"></div>
-              <div class="eng-chart-grid-line line-50"></div>
-              ${hours.map(h => {
-                const heightPct = Math.min(100, Math.round((h.solarKw / peakVal) * 100));
-                const valText = h.solarKw >= 1 ? Math.round(h.solarKw) : '';
-                const tooltip = `${h.hourLabel}\nSolar Generation: ${h.solarKw.toFixed(1)} kW`;
-
-                return `
-                  <div class="eng-chart-col" title="${tooltip}">
-                    <div class="eng-col-track">
-                      ${heightPct > 0 ? `
-                        <div class="eng-col-bar bar-solar" style="height: ${heightPct}%;">
-                          ${valText ? `<span class="eng-bar-val">${valText}</span>` : ''}
-                        </div>
-                      ` : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-
-          <!-- Dedicated X-Axis Labels Row Completely Decoupled from Bar Heights -->
-          <div class="eng-chart-xaxis-row">
-            <div class="eng-xaxis-spacer"></div>
-            <div class="eng-chart-xaxis-labels">
-              ${hours.map(h => `
-                <div class="eng-xaxis-cell">${h.hour % 2 === 0 ? String(h.hour).padStart(2, '0') + ':00' : ''}</div>
-              `).join('')}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+  private renderSolarCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult) : string {
+    return renderSolarCurveCardImpl.call(this, hours, peakVal, simResult);
   }
 
   /**
    * Renders Curve 2: Facility Load Demand Curve with strict baseline bottom alignment.
    */
-  private renderLoadCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult): string {
-    return `
-      <div class="eng-curve-card load-curve">
-        <div class="curve-card-header">
-          <div class="curve-card-title">
-            <span class="curve-dot dot-load"></span>
-            <strong>2. FACILITY LOAD DEMAND CURVE P<sub>load</sub> (kW)</strong>
-            <span class="curve-meta">&bull; Facility Consumption Archetype &bull; Diurnal Demand</span>
-          </div>
-          <div class="curve-card-stats">
-            <span>Peak Demand: <strong class="text-accent-amber">${simResult.diurnalSummary.peakLoadKw} kW</strong></span>
-            <span>Daily Demand: <strong class="text-accent-amber">${simResult.diurnalSummary.dailyLoadKwh.toLocaleString()} kWh</strong></span>
-          </div>
-        </div>
-
-        <div class="eng-chart-box">
-          <div class="eng-chart-plot-row">
-            <!-- Left Y-Axis Scale -->
-            <div class="eng-chart-yaxis">
-              <span>${Math.round(peakVal)} kW</span>
-              <span>${Math.round(peakVal * 0.5)} kW</span>
-              <span>0 kW</span>
-            </div>
-
-            <!-- Plot Area: 24 Strictly Bottom-Aligned Columns -->
-            <div class="eng-chart-bars-wrap">
-              <div class="eng-chart-grid-line line-100"></div>
-              <div class="eng-chart-grid-line line-50"></div>
-              ${hours.map(h => {
-                const heightPct = Math.min(100, Math.round((h.loadKw / peakVal) * 100));
-                const valText = h.loadKw >= 1 ? Math.round(h.loadKw) : '';
-                const tooltip = `${h.hourLabel}\nFacility Demand: ${h.loadKw.toFixed(1)} kW`;
-
-                return `
-                  <div class="eng-chart-col" title="${tooltip}">
-                    <div class="eng-col-track">
-                      ${heightPct > 0 ? `
-                        <div class="eng-col-bar bar-load" style="height: ${heightPct}%;">
-                          ${valText ? `<span class="eng-bar-val">${valText}</span>` : ''}
-                        </div>
-                      ` : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-
-          <!-- Dedicated X-Axis Labels Row Completely Decoupled from Bar Heights -->
-          <div class="eng-chart-xaxis-row">
-            <div class="eng-xaxis-spacer"></div>
-            <div class="eng-chart-xaxis-labels">
-              ${hours.map(h => `
-                <div class="eng-xaxis-cell">${h.hour % 2 === 0 ? String(h.hour).padStart(2, '0') + ':00' : ''}</div>
-              `).join('')}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+  private renderLoadCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult) : string {
+    return renderLoadCurveCardImpl.call(this, hours, peakVal, simResult);
   }
 
   /**
    * Renders Curve 3: Combined Dispatch & Power Balance Curve with strict baseline bottom alignment.
    */
-  private renderDispatchCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult): string {
-    return `
-      <div class="eng-curve-card dispatch-curve">
-        <div class="curve-card-header">
-          <div class="curve-card-title">
-            <span class="curve-dot dot-dispatch"></span>
-            <strong>3. COMBINED DISPATCH &amp; POWER BALANCE CURVE (kW)</strong>
-            <span class="curve-meta">&bull; Direct Solar Consumed &bull; Grid Export Surplus &bull; Grid Import Deficit</span>
-          </div>
-          <div class="curve-card-stats">
-            <span>Self-Consumed: <strong class="text-accent-green">${simResult.diurnalSummary.dailySelfConsumedKwh.toLocaleString()} kWh</strong></span>
-            <span>Export: <strong class="text-accent-amber">${simResult.diurnalSummary.dailyExportedKwh.toLocaleString()} kWh</strong></span>
-            <span>Import: <strong class="text-accent-cyan">${simResult.diurnalSummary.dailyImportedKwh.toLocaleString()} kWh</strong></span>
-          </div>
-          <!-- Legend Bar -->
-          <div class="diurnal-legend-bar" style="margin: 0; padding: 0; background: transparent;">
-            <span class="legend-chip"><span class="chip-dot chip-self"></span> Direct Solar Consumed (kW)</span>
-            <span class="legend-chip"><span class="chip-dot chip-export"></span> Solar Export to Grid (kW)</span>
-            <span class="legend-chip"><span class="chip-dot chip-import"></span> Grid Import Needed (kW)</span>
-            <span class="legend-chip"><span class="chip-line chip-solar-line"></span> Solar Gen Peak</span>
-            <span class="legend-chip"><span class="chip-line chip-load-line"></span> Load Demand Peak</span>
-          </div>
-        </div>
-
-        <div class="eng-chart-box">
-          <div class="eng-chart-plot-row">
-            <!-- Left Y-Axis Scale -->
-            <div class="eng-chart-yaxis">
-              <span>${Math.round(peakVal)} kW</span>
-              <span>${Math.round(peakVal * 0.5)} kW</span>
-              <span>0 kW</span>
-            </div>
-
-            <!-- Plot Area: 24 Strictly Bottom-Aligned Stacked Columns -->
-            <div class="eng-chart-bars-wrap">
-              <div class="eng-chart-grid-line line-100"></div>
-              <div class="eng-chart-grid-line line-50"></div>
-              ${hours.map(h => {
-                const selfH = Math.round((h.selfConsumedKw / peakVal) * 100);
-                const exportH = Math.round((h.exportKw / peakVal) * 100);
-                const importH = Math.round((h.importKw / peakVal) * 100);
-                const solarTop = Math.max(0, Math.min(96, Math.round(100 - (h.solarKw / peakVal) * 100)));
-                const loadTop = Math.max(0, Math.min(96, Math.round(100 - (h.loadKw / peakVal) * 100)));
-
-                const tooltip = `${h.hourLabel}\nSolar Gen: ${h.solarKw.toFixed(1)} kW\nFacility Load: ${h.loadKw.toFixed(1)} kW\nDirect Self-Consumed: ${h.selfConsumedKw.toFixed(1)} kW\nGrid Export Surplus: ${h.exportKw.toFixed(1)} kW\nGrid Import Deficit: ${h.importKw.toFixed(1)} kW`;
-
-                return `
-                  <div class="eng-chart-col" title="${tooltip}">
-                    <div class="eng-col-track">
-                      <!-- Reference Markers -->
-                      ${h.solarKw > 0 ? `<div class="diurnal-marker marker-solar" style="top: ${solarTop}%;" title="Solar: ${h.solarKw.toFixed(1)} kW"></div>` : ''}
-                      ${h.loadKw > 0 ? `<div class="diurnal-marker marker-load" style="top: ${loadTop}%;" title="Load: ${h.loadKw.toFixed(1)} kW"></div>` : ''}
-
-                      <!-- Stacked Power Bars Anchored to Baseline -->
-                      ${exportH > 0 ? `<div class="eng-col-bar bar-export" style="height: ${exportH}%;"></div>` : ''}
-                      ${selfH > 0 ? `<div class="eng-col-bar bar-self" style="height: ${selfH}%;"></div>` : ''}
-                      ${importH > 0 ? `<div class="eng-col-bar bar-import" style="height: ${importH}%;"></div>` : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-
-          <!-- Dedicated X-Axis Labels Row Completely Decoupled from Bar Heights -->
-          <div class="eng-chart-xaxis-row">
-            <div class="eng-xaxis-spacer"></div>
-            <div class="eng-chart-xaxis-labels">
-              ${hours.map(h => `
-                <div class="eng-xaxis-cell">${h.hour % 2 === 0 ? String(h.hour).padStart(2, '0') + ':00' : ''}</div>
-              `).join('')}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+  private renderDispatchCurveCard(hours: HourlyEnergyDispatch[], peakVal: number, simResult: SimulationResult) : string {
+    return renderDispatchCurveCardImpl.call(this, hours, peakVal, simResult);
   }
 
-  private attachEventListeners(simResult: SimulationResult): void {
-    // Scope change
-    const selScope = this.container.querySelector('#sel-sim-sys-scope') as HTMLSelectElement | null;
-    selScope?.addEventListener('change', (e) => {
-      this.currentSystemId = (e.target as HTMLSelectElement).value;
-      this.render();
-    });
-
-    // Modal shortcuts
-    this.container.querySelector('#btn-sim-open-solar-yield')?.addEventListener('click', () => {
-      this.callbacks?.onOpenSolarYield?.(this.currentSystemId);
-    });
-
-    this.container.querySelector('#btn-sim-open-load-profile')?.addEventListener('click', () => {
-      this.callbacks?.onOpenLoadProfile?.(this.currentSystemId);
-    });
-
-    // CSV export
-    this.container.querySelector('#btn-sim-export-csv')?.addEventListener('click', () => {
-      this.handleExportCsv(simResult);
-    });
-
-    // PDF report export
-    this.container.querySelector('#btn-sim-export-pdf')?.addEventListener('click', () => {
-      this.callbacks?.onOpenPdfReport?.(this.currentSystemId);
-    });
-
-    // Diurnal controls
-    const selPeriod = this.container.querySelector('#sel-sim-period-ws') as HTMLSelectElement | null;
-    selPeriod?.addEventListener('change', (e) => {
-      const val = (e.target as HTMLSelectElement).value;
-      this.simPeriodOption = val === 'annual' ? 'annual' : parseInt(val, 10);
-      this.render();
-    });
-
-    const selWeekly = this.container.querySelector('#sel-sim-weekly-ws') as HTMLSelectElement | null;
-    selWeekly?.addEventListener('change', (e) => {
-      this.simWeeklyOption = (e.target as HTMLSelectElement).value as SimulationWeeklyOption;
-      this.render();
-    });
-
-    // Curve filter buttons
-    this.container.querySelectorAll<HTMLButtonElement>('.btn-curve-toggle').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const curve = btn.getAttribute('data-curve') as SimulationCurveFilter;
-        if (curve) {
-          this.activeCurveView = curve;
-          this.render();
-        }
-      });
-    });
-
-    // Tariff inputs
-    const inpImport = this.container.querySelector('#inp-import-tariff-ws') as HTMLInputElement | null;
-    inpImport?.addEventListener('change', (e) => {
-      const val = parseFloat((e.target as HTMLInputElement).value);
-      if (!isNaN(val) && val >= 0) {
-        this.importTariffRate = val;
-        this.render();
-      }
-    });
-
-    const inpExport = this.container.querySelector('#inp-export-tariff-ws') as HTMLInputElement | null;
-    inpExport?.addEventListener('change', (e) => {
-      const val = parseFloat((e.target as HTMLInputElement).value);
-      if (!isNaN(val) && val >= 0) {
-        this.exportTariffRate = val;
-        this.render();
-      }
-    });
+  private attachEventListeners(simResult: SimulationResult) : void {
+    return attachEventListenersImpl.call(this, simResult);
   }
 }

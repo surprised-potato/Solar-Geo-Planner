@@ -10,6 +10,7 @@ import {
 } from '../../geo/projection';
 import type { MapController } from '../mapController';
 import { escapeHtml } from '../../utils/html';
+import { isMultiSelectClick } from '../mapEvents';
 
 /**
  * Visualizes array and mount table tilt with downward slope arrows.
@@ -144,15 +145,7 @@ export function renderTiltArrows(this: MapController): void {
 
     badgeMarker.on('click', (e: L.LeafletMouseEvent) => {
       L.DomEvent.stopPropagation(e);
-      const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
-      this.selectedHomerunSystemId = null;
-      this.selectedRacewayZoneId = null;
-      this.selectedInverterSystemId = null;
-      this.store.selectKeepOut(null);
-      this.selectedTableId = null;
-      this.store.selectZone(zone.id, isMulti);
-      this.updateMountTableStyles();
-      this.updateSelectionHud();
+      this.selectZoneFromMap(zone.id, isMultiSelectClick(e));
     });
 
     badgeMarker.bindTooltip(

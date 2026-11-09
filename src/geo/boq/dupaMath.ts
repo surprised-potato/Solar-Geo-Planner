@@ -26,6 +26,26 @@ export function normalizeDupaQuotes(str: string | undefined | null): string {
 }
 
 /**
+ * Zeroed cost fields for a freshly built work item; `recalculateDupaItem` fills them in.
+ */
+export function unpricedTotals(ocmPercent: number, profitPercent: number, vatPercent: number) {
+  return {
+    totalMaterialsPhp: 0,
+    totalLaborPhp: 0,
+    totalEquipmentPhp: 0,
+    estimatedDirectCostPhp: 0,
+    ocmPercent,
+    ocmAmountPhp: 0,
+    profitPercent,
+    profitAmountPhp: 0,
+    vatPercent,
+    vatAmountPhp: 0,
+    totalItemCostPhp: 0,
+    unitCostPerItemPhp: 0
+  };
+}
+
+/**
  * Standard DPWH / Solar EPC Unit Price Recalculation
  */
 export function recalculateDupaItem(item: DupaWorkItem): DupaWorkItem {

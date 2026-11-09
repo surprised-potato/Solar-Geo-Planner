@@ -6,7 +6,8 @@ import { getCompassHeading } from '../geo/projection';
 import {
   setupMapEvents as setupMapEventsImpl,
   deleteSelectedElement as deleteSelectedElementImpl,
-  fitSelectedElement as fitSelectedElementImpl
+  fitSelectedElement as fitSelectedElementImpl,
+  selectZoneFromMap as selectZoneFromMapImpl
 } from './mapEvents';
 import {
   updateSelectionHud as updateSelectionHudImpl,
@@ -36,7 +37,8 @@ import {
 } from './layers/arrayLayers';
 import { renderTiltArrows as renderTiltArrowsImpl } from './layers/tiltArrows';
 import { renderVertexHandles as renderVertexHandlesImpl } from './layers/vertexHandles';
-import { escapeHtml } from '../utils/html';
+import { flyTo as flyToImpl, zoomToZone as zoomToZoneImpl, zoomToPanel as zoomToPanelImpl, zoomToTable as zoomToTableImpl, zoomToInverter as zoomToInverterImpl, zoomToAcInterconnection as zoomToAcInterconnectionImpl, zoomToAcRaceway as zoomToAcRacewayImpl, zoomToRaceway as zoomToRacewayImpl, zoomToKeepOut as zoomToKeepOutImpl, zoomToString as zoomToStringImpl } from './mapNavigation';
+import { updateZoneStyles as updateZoneStylesImpl, updateRoofRailStyles as updateRoofRailStylesImpl, getMountTableStyle as getMountTableStyleImpl, getPanelStyle as getPanelStyleImpl, createPanelLayer as createPanelLayerImpl } from './layers/panelStyles';
 
 export class MapController {
   map: L.Map;
@@ -297,122 +299,48 @@ export class MapController {
     return next;
   }
 
-  public flyTo(lat: number, lng: number, zoom = 19): void {
-    this.map.flyTo([lat, lng], zoom, { duration: 1.2 });
+  public flyTo(lat: number, lng: number, zoom = 19) : void {
+    return flyToImpl.call(this, lat, lng, zoom);
   }
 
-  public zoomToZone(zoneId: string): void {
-    const zone = this.store.getZone(zoneId);
-    if (!zone || zone.vertices.length === 0) return;
-
-    const bounds = L.latLngBounds(zone.vertices.map(v => [v.lat, v.lng] as [number, number]));
-    this.map.fitBounds(bounds, {
-      padding: [80, 80],
-      maxZoom: 22,
-      animate: true,
-      duration: 1.0
-    });
+  public zoomToZone(zoneId: string) : void {
+    return zoomToZoneImpl.call(this, zoneId);
   }
 
-  public zoomToPanel(panelId: string): void {
-    const panel = this.store.getPanel(panelId);
-    if (!panel) return;
-    const zone = this.store.getZone(panel.zoneId);
-    if (zone?.config.mountType === 'ground' && zone.tables) {
-      const table = zone.tables.find(t => t.panelIds.includes(panelId));
-      if (table) {
-        this.selectedTableId = table.id;
-        this.updateMountTableStyles();
-      }
-    }
-    this.map.flyTo([panel.centroid.lat, panel.centroid.lng], Math.max(this.map.getZoom(), 22), {
-      duration: 0.8
-    });
+  public zoomToPanel(panelId: string) : void {
+    return zoomToPanelImpl.call(this, panelId);
   }
 
-  public zoomToTable(table: MountTableObject): void {
-    const latlngs = table.corners.map(c => [c.lat, c.lng] as [number, number]);
-    const bounds = L.latLngBounds(latlngs);
-    this.map.flyToBounds(bounds.pad(0.35), {
-      maxZoom: 21,
-      duration: 0.8
-    });
+  public zoomToTable(table: MountTableObject) : void {
+    return zoomToTableImpl.call(this, table);
   }
 
-  public zoomToInverter(systemId: string): void {
-    const sys = this.store.getSystem(systemId);
-    if (!sys || !sys.inverterLocation) return;
-    this.map.flyTo([sys.inverterLocation.lat, sys.inverterLocation.lng], Math.max(this.map.getZoom(), 21), {
-      duration: 0.8
-    });
+  public zoomToInverter(systemId: string) : void {
+    return zoomToInverterImpl.call(this, systemId);
   }
 
-  public zoomToAcInterconnection(systemId: string): void {
-    const sys = this.store.getSystem(systemId);
-    if (!sys || !sys.acInterconnectionLocation) return;
-    this.map.flyTo([sys.acInterconnectionLocation.lat, sys.acInterconnectionLocation.lng], Math.max(this.map.getZoom(), 21), {
-      duration: 0.8
-    });
+  public zoomToAcInterconnection(systemId: string) : void {
+    return zoomToAcInterconnectionImpl.call(this, systemId);
   }
 
-  public zoomToAcRaceway(systemId: string): void {
-    const sys = this.store.getSystem(systemId);
-    if (!sys?.acRaceway || !sys.acRaceway.path || sys.acRaceway.path.length === 0) return;
-    const latlngs = sys.acRaceway.path.map((p: LatLngPoint) => [p.lat, p.lng] as [number, number]);
-    const bounds = L.latLngBounds(latlngs);
-    this.map.flyToBounds(bounds, {
-      padding: [40, 40],
-      duration: 1.0,
-      maxZoom: 21
-    });
+  public zoomToAcRaceway(systemId: string) : void {
+    return zoomToAcRacewayImpl.call(this, systemId);
   }
 
-  public zoomToRaceway(zoneId?: string, systemId?: string): void {
-    const homerun = (zoneId ? this.store.getHomerunForZone(zoneId) : null)
-      || this.store.getSystemHomerun(systemId, this.selectedHomerunId || undefined);
-    if (!homerun || !homerun.path || homerun.path.length === 0) return;
-    const latlngs = homerun.path.map((p: LatLngPoint) => [p.lat, p.lng] as [number, number]);
-    const bounds = L.latLngBounds(latlngs);
-    this.map.flyToBounds(bounds, {
-      padding: [60, 60],
-      maxZoom: 22,
-      duration: 1.0
-    });
+  public zoomToRaceway(zoneId?: string, systemId?: string) : void {
+    return zoomToRacewayImpl.call(this, zoneId, systemId);
   }
 
-  public zoomToKeepOut(zoneId: string, keepOutId: string): void {
-    const zone = this.store.getZone(zoneId);
-    if (!zone) return;
-    const ko = zone.keepOuts.find(k => k.id === keepOutId);
-    if (!ko || ko.vertices.length === 0) return;
-    const latlngs = ko.vertices.map(v => [v.lat, v.lng] as [number, number]);
-    const bounds = L.latLngBounds(latlngs);
-    this.map.flyToBounds(bounds, {
-      padding: [80, 80],
-      maxZoom: 22,
-      duration: 1.0
-    });
+  public zoomToKeepOut(zoneId: string, keepOutId: string) : void {
+    return zoomToKeepOutImpl.call(this, zoneId, keepOutId);
   }
 
   public invalidateSize(): void {
     this.map.invalidateSize();
   }
 
-  public zoomToString(stringId: string, systemId?: string): void {
-    const panels = this.store
-      .getPanels()
-      .filter(p => p.stringId === stringId && (!systemId || p.systemId === systemId));
-    if (panels.length === 0) return;
-    const points: [number, number][] = [];
-    panels.forEach(p => {
-      p.corners.forEach(c => points.push([c.lat, c.lng]));
-    });
-    const bounds = L.latLngBounds(points);
-    this.map.flyToBounds(bounds, {
-      padding: [70, 70],
-      maxZoom: 22,
-      duration: 1.0
-    });
+  public zoomToString(stringId: string, systemId?: string) : void {
+    return zoomToStringImpl.call(this, stringId, systemId);
   }
 
   private setupMapEvents(): void {
@@ -433,6 +361,10 @@ export class MapController {
 
   public deleteSelectedElement(): boolean {
     return deleteSelectedElementImpl.call(this);
+  }
+
+  selectZoneFromMap(zoneId: string, isMulti: boolean): void {
+    selectZoneFromMapImpl.call(this, zoneId, isMulti);
   }
 
   public fitSelectedElement(): void {
@@ -560,51 +492,12 @@ export class MapController {
     this.lastRenderedRacewayZoneId = this.selectedRacewayZoneId;
   }
 
-  private updateZoneStyles(): void {
-    const vf = this.store.viewFilter;
-    const isDrawing = this.store.drawingMode !== 'none';
-
-    for (const zone of this.store.getZones()) {
-      const poly = this.zoneLayerMap.get(zone.id);
-      if (!poly) continue;
-      const isSelected = this.store.isZoneSelected(zone.id);
-
-      let fillOpacity = 0.15;
-      if (!vf.showArrayFill || vf.xRayMode || isDrawing) {
-        fillOpacity = isSelected ? 0.08 : 0;
-      } else if (isSelected) {
-        fillOpacity = 0.24;
-      }
-
-      poly.setStyle({
-        color: isSelected ? '#fbbf24' : zone.color,
-        weight: isSelected ? 3.5 : 2,
-        fillColor: zone.color,
-        fillOpacity,
-        dashArray: isSelected ? undefined : '3, 3'
-      });
-    }
+  private updateZoneStyles() : void {
+    return updateZoneStylesImpl.call(this);
   }
 
-  private updateRoofRailStyles(): void {
-    const vf = this.store.viewFilter;
-    const isDimmed = vf.panelVisibility === 'dimmed' || this.store.drawingMode !== 'none';
-
-    for (const [zoneId, rails] of this.roofRailLayerMap.entries()) {
-      const isSelectedZone =
-        this.store.selectedZoneId === zoneId || this.store.selectedZoneIds.has(zoneId);
-      const railColor = isSelectedZone ? '#38bdf8' : '#94a3b8';
-      const railWeight = isSelectedZone ? 3.0 : 2.2;
-      const railOpacity = isDimmed ? 0.95 : 0.85;
-
-      for (const rail of rails) {
-        rail.setStyle({
-          color: railColor,
-          weight: railWeight,
-          opacity: railOpacity
-        });
-      }
-    }
+  private updateRoofRailStyles() : void {
+    return updateRoofRailStylesImpl.call(this);
   }
 
   private renderRaceways(): void {
@@ -635,65 +528,8 @@ export class MapController {
     return renderKeepOutsImpl.call(this);
   }
 
-  getMountTableStyle(
-    table: MountTableObject,
-    _zone: ArrayZone,
-    isDimmed: boolean,
-    isSelectedZone: boolean,
-    isSelectedTable: boolean
-  ): L.PathOptions {
-    const tablePanels = table.panelIds.map(id => this.store.getPanel(id)).filter(Boolean);
-    const allInactive = tablePanels.length > 0 && tablePanels.every(p => !p?.active);
-
-    if (allInactive) {
-      return {
-        color: '#64748b',
-        weight: isSelectedTable ? 2.5 : 1,
-        fillColor: '#334155',
-        fillOpacity: isDimmed ? 0.1 : 0.35,
-        interactive: true
-      };
-    }
-
-    if (isSelectedTable) {
-      return {
-        color: '#ffffff',
-        weight: 3,
-        fillColor: '#f59e0b',
-        fillOpacity: 0.95,
-        interactive: true
-      };
-    }
-
-    if (isDimmed) {
-      return {
-        color: isSelectedZone ? '#38bdf8' : '#64748b',
-        weight: isSelectedZone ? 2 : 1,
-        dashArray: '3, 3',
-        fillColor: '#1e293b',
-        fillOpacity: 0.25,
-        interactive: true
-      };
-    }
-
-    if (isSelectedZone) {
-      return {
-        color: '#38bdf8',
-        weight: 2.2,
-        fillColor: '#1d4ed8',
-        fillOpacity: 0.9,
-        interactive: true
-      };
-    }
-
-    // Default clean, solid PV rack appearance
-    return {
-      color: '#38bdf8',
-      weight: 1.2,
-      fillColor: '#1e3a8a',
-      fillOpacity: 0.85,
-      interactive: true
-    };
+  getMountTableStyle( table: MountTableObject, _zone: ArrayZone, isDimmed: boolean, isSelectedZone: boolean, isSelectedTable: boolean ) : L.PathOptions {
+    return getMountTableStyleImpl.call(this, table, _zone, isDimmed, isSelectedZone, isSelectedTable);
   }
 
   updateMountTableStyles(): void {
@@ -712,119 +548,12 @@ export class MapController {
     return renderPanelsImpl.call(this);
   }
 
-  private getPanelStyle(
-    panel: SolarPanelObject,
-    isDimmed: boolean,
-    isSelected: boolean
-  ): L.PathOptions {
-    let color = '#38bdf8';
-    let fillColor = '#1e3a8a';
-    let fillOpacity = isDimmed ? 0.2 : 0.85;
-    let weight = isDimmed ? 0.8 : 1;
-
-    if (!panel.active) {
-      color = '#64748b';
-      fillColor = '#334155';
-      fillOpacity = isDimmed ? 0.1 : 0.35;
-    } else if (isSelected) {
-      color = '#ffffff';
-      fillColor = '#f59e0b';
-      fillOpacity = 0.95;
-      weight = 2.5;
-    } else if (panel.stringId) {
-      let hash = 0;
-      for (let i = 0; i < panel.stringId.length; i++) {
-        hash = (hash << 5) - hash + panel.stringId.charCodeAt(i);
-        hash |= 0;
-      }
-      const hue = Math.abs(hash) % 360;
-      color = `hsl(${hue}, 90%, 65%)`;
-      fillColor = `hsl(${hue}, 75%, 25%)`;
-    }
-
-    return { color, fillColor, fillOpacity, weight };
+  getPanelStyle( panel: SolarPanelObject, isDimmed: boolean, isSelected: boolean ) : L.PathOptions {
+    return getPanelStyleImpl.call(this, panel, isDimmed, isSelected);
   }
 
-  createPanelLayer(
-    panel: SolarPanelObject,
-    isDimmed: boolean,
-    selectedPanelId: string | null
-  ): void {
-    const isSelected = panel.id === selectedPanelId;
-    const style = this.getPanelStyle(panel, isDimmed, isSelected);
-
-    const poly = L.polygon(
-      panel.corners.map(c => [c.lat, c.lng]),
-      style
-    );
-
-    poly.on('click', (e: L.LeafletMouseEvent) => {
-      if (this.store.drawingMode === 'match_props') {
-        L.DomEvent.stopPropagation(e);
-        const targetZone = this.store.getZone(panel.zoneId);
-        if (targetZone && this.store.matchPropsSourceZoneId && targetZone.id !== this.store.matchPropsSourceZoneId) {
-          const res = this.store.matchZoneProperties(
-            this.store.matchPropsSourceZoneId,
-            targetZone.id,
-            this.store.matchPropsOptions
-          );
-          if (res.success) {
-            const hint = document.getElementById('hud-drawing-hint');
-            if (hint) {
-              hint.innerHTML = `<span style="color: #10b981; font-weight: bold;">✓ Matched properties to ${escapeHtml(targetZone.name)}!</span> Click another array or click Done to finish.`;
-            }
-          }
-        }
-        return;
-      }
-
-      if (this.store.drawingMode === 'inverter') {
-        const currentSys = this.store.getSelectedSystem();
-        if (currentSys) {
-          this.store.setSystemInverterLocation(currentSys.id, { lat: e.latlng.lat, lng: e.latlng.lng });
-        }
-        this.store.setDrawingMode('none');
-        return;
-      }
-
-      // Forward click to drawing engine if currently drawing
-      if (this.store.drawingMode !== 'none') {
-        this.addDrawingPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
-        return;
-      }
-
-      L.DomEvent.stopPropagation(e);
-      this.selectedHomerunSystemId = null;
-      this.selectedRacewayZoneId = null;
-      this.selectedInverterSystemId = null;
-      this.selectedAcRacewaySystemId = null;
-      this.selectedAcInterconnectionSystemId = null;
-      this.store.selectKeepOut(null);
-      const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
-      if (isMulti) {
-        this.store.selectZone(panel.zoneId, true);
-        this.updateSelectionHud();
-        return;
-      }
-
-      this.store.selectPanel(panel.id);
-    });
-
-    const sys = this.store.getSystem(panel.systemId);
-    const mod = this.store.getModule(panel.moduleId);
-    poly.bindTooltip(
-      `<div class="panel-hover-info">
-        <div><strong>${panel.id}</strong> (${panel.active ? 'Active' : 'Disabled'})</div>
-        <div><span style="color: ${sys?.color || '#38bdf8'}">${escapeHtml(sys?.name?.split(':')[0] || 'System')}</span> &bull; ${escapeHtml(mod?.name?.split(' ')[0] || 'Module')}</div>
-        <div>Row ${panel.rowIndex}, Col ${panel.colIndex} &bull; ${panel.electrical.nominalPowerW}W</div>
-        ${panel.stringId ? `<div>⚡ String: <b>${panel.stringId}</b> (#${panel.stringOrder})</div>` : ''}
-        ${panel.mpptId ? `<div>🔌 Inverter/MPPT: <b>${panel.mpptId}</b></div>` : ''}
-      </div>`,
-      { sticky: true, className: 'solar-tooltip' }
-    );
-
-    this.panelLayerGroup.addLayer(poly);
-    this.panelLayerMap.set(panel.id, poly);
+  createPanelLayer( panel: SolarPanelObject, isDimmed: boolean, selectedPanelId: string | null ) : void {
+    return createPanelLayerImpl.call(this, panel, isDimmed, selectedPanelId);
   }
 
   getCompassHeading(deg: number): string {

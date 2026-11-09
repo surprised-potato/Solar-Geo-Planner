@@ -11,6 +11,7 @@ import { SingleLineDiagramUI } from './ui/sldView';
 import { BoqAndDupaUI } from './ui/boqView';
 import { SimulationWorkspaceUI } from './ui/simulationView';
 import { PdfReportModalUI } from './ui/pdfReportModal';
+import { downloadText } from './utils/download';
 
 // Initialize core store
 const store = new ProjectStore();
@@ -458,32 +459,19 @@ document.addEventListener('click', (e: MouseEvent) => {
   }
 });
 
-// JSON Export Helper
-function downloadFile(content: string, filename: string, type: string): void {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 document.getElementById('btn-export-json')?.addEventListener('click', () => {
   const json = store.exportProjectJson();
-  downloadFile(json, `solar_project_${Date.now()}.json`, 'application/json');
+  downloadText(json, `solar_project_${Date.now()}.json`, 'application/json');
 });
 
 document.getElementById('btn-export-modal-json')?.addEventListener('click', () => {
   const json = store.exportProjectJson();
-  downloadFile(json, `solar_project_${Date.now()}.json`, 'application/json');
+  downloadText(json, `solar_project_${Date.now()}.json`, 'application/json');
 });
 
 document.getElementById('btn-export-modal-geojson')?.addEventListener('click', () => {
   const geojson = store.exportProjectGeoJson();
-  downloadFile(geojson, `solar_project_${Date.now()}.geojson`, 'application/geo+json');
+  downloadText(geojson, `solar_project_${Date.now()}.geojson`, 'application/geo+json');
 });
 
 // JSON Import

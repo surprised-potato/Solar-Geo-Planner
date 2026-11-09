@@ -8,6 +8,7 @@ import {
 } from '../../geo/projection';
 import { exportBoqAndDupaCsv } from '../../geo/boqCalculator';
 import type { RegistryModalUI } from '../registryModal';
+import { downloadCsv, rowsToCsv, safeFileName } from '../../utils/download';
 
 /**
  * Exports the currently active table view as a clean, standardized CSV file.
@@ -17,7 +18,7 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
   let rows: string[][] = [];
   const isFiltered = this.filterSystemId !== 'all';
   const activeSys = isFiltered ? this.store.getSystem(this.filterSystemId) : undefined;
-  const sysSlug = activeSys ? `_${activeSys.name.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '_all_systems';
+  const sysSlug = activeSys ? `_${safeFileName(activeSys.name)}` : '_all_systems';
 
   switch (this.activeTab) {
     case 'arrays': {
@@ -436,7 +437,7 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
 
     case 'sld': {
       const sys = (isFiltered ? activeSys : undefined) || this.store.getSelectedSystem() || this.store.getSystems()[0];
-      filename = `sld_system_${sys?.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.csv`;
+      filename = `sld_system_${safeFileName(sys?.name, 'System')}_${Date.now()}.csv`;
       const sum = this.store.getSystemSummary(sys?.id);
       rows = [
         ['System_ID', 'System_Name', 'Total_DC_kWp', 'Inverter_AC_kW', 'DC_AC_Ratio', 'Strings_Count', 'Inverter_Model'],
@@ -456,28 +457,10 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
     case 'boq': {
       const boq = this.store.getBoqState(this.filterSystemId);
       const csvContent = exportBoqAndDupaCsv(this.store.projectName, boq);
-      filename = `${this.store.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}_BOQ_and_DUPA_${Date.now()}.csv`;
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadCsv(csvContent, `${safeFileName(this.store.projectName)}_BOQ_and_DUPA_${Date.now()}.csv`);
       return;
     }
   }
 
-  const csvContent = rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCsv(rowsToCsv(rows), filename);
 }

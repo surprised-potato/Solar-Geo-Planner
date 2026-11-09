@@ -2,7 +2,7 @@
  * Inverter, AC combiner, transformer and MDP work items (D7–D10).
  */
 import { DupaWorkItem } from '../../../types/solar';
-import { recalculateDupaItem } from '../dupaMath';
+import { recalculateDupaItem, unpricedTotals } from '../dupaMath';
 import type { BoqContext } from '../boqContext';
 
 /** D7: String Inverters – 2 × 50kW (Sungrow SG50CX or assigned model) */
@@ -101,18 +101,7 @@ export function buildD7Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d7Item;
 }
@@ -229,18 +218,7 @@ export function buildD8Item(ctx: BoqContext): DupaWorkItem {
           }
         ]
       : [],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d8Item;
 }
@@ -385,18 +363,7 @@ export function buildD9Item(ctx: BoqContext): DupaWorkItem {
           }
         ]
       : [],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d9Item;
 }
@@ -502,18 +469,7 @@ export function buildD10Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d10Item;
 }

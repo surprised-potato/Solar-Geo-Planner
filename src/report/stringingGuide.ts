@@ -8,7 +8,8 @@
  */
 import { jsPDF } from 'jspdf';
 import { ProjectStore } from '../store/projectStore';
-import { latLngToLocalMetric } from '../geo/projection';
+import { latLngToLocalMetric, localMetricToLatLng } from '../geo/projection';
+import { renderSatelliteBasemapForView } from './cadSnapshot';
 import { ArrayZone, LatLngPoint, MetricPoint, SolarPanelObject, StringCableLength } from '../types/solar';
 import { collectReportBundleData } from './pdfReportGenerator';
 import { ReportBundleData, ReportExportOptions, ReportSystemData } from './reportTypes';
@@ -23,6 +24,16 @@ export interface StringingGuideOptions {
   engineerName?: string;
   companyName?: string;
   reportDate?: string;
+  /** Satellite imagery for the overview site plan, from prefetchStringingBasemap(). */
+  basemap?: StringingBasemap | null;
+}
+
+/** Square satellite image centred on the site, in local metres around the project origin. */
+export interface StringingBasemap {
+  dataUrl: string;
+  centerX: number;
+  centerY: number;
+  sizeM: number;
 }
 
 /** Distinct colours, cycled per string. All are dark enough for white labels. */
@@ -168,6 +179,7 @@ interface GuideData {
   tags: Map<string, StringTag>; // key: systemId|stringId
   cables: Map<string, StringCableLength>; // key: systemId|stringId
   systemOf: Map<string, ReportSystemData>;
+  basemap: StringingBasemap | null;
 }
 
 const keyOf = (systemId: string, stringId: string): string => `${systemId}|${stringId}`;
@@ -189,7 +201,7 @@ function prepare(store: ProjectStore, bundle: ReportBundleData): GuideData {
       });
     for (const c of sys.cables.strings) cables.set(keyOf(sys.system.id, c.stringId), c);
   }
-  return { bundle, origin: store.center, tags, cables, systemOf };
+  return { bundle, origin: store.center, tags, cables, systemOf, basemap: null };
 }
 
 function zoneStringRows(store: ProjectStore, zone: ArrayZone, data: GuideData): ZoneStringRow[] {
@@ -250,20 +262,44 @@ function renderOverview(ctx: ReportCtx, store: ProjectStore, data: GuideData, ar
     ctx.fill(COLORS.zebra);
     ctx.doc.rect(box.x, box.y, box.w, box.h, 'FD');
     const view = makeView(boundsOf(allPts), box, 12);
+    const bm = data.basemap;
+    if (bm) {
+      // Clip to the plan box and lay the image on the same metric frame as the arrays.
+      const tl = toPage(view, { x: bm.centerX - bm.sizeM / 2, y: bm.centerY + bm.sizeM / 2 });
+      const side = bm.sizeM * view.scale;
+      try {
+        ctx.doc.saveGraphicsState();
+        ctx.doc.rect(box.x, box.y, box.w, box.h, null as any);
+        ctx.doc.clip();
+        ctx.doc.discardPath();
+        ctx.doc.addImage(bm.dataUrl, 'JPEG', tl[0], tl[1], side, side);
+        ctx.doc.restoreGraphicsState();
+        ctx.stroke(COLORS.border, 0.3);
+        ctx.doc.rect(box.x, box.y, box.w, box.h, 'S');
+      } catch {
+        ctx.doc.restoreGraphicsState();
+      }
+    }
     zones.forEach((z, i) => {
       const sys = bundle.systems.find(s => s.system.id === z.systemId);
       const hex = sys?.system.color ?? '#38bdf8';
       const rgb = hexToRgb(hex);
       const pts = z.vertices.map(v => toPage(view, metric(v)));
-      ctx.fill(lighten(rgb, 0.7));
-      ctx.stroke(rgb, 0.5);
+      ctx.fill(bm ? rgb : lighten(rgb, 0.7));
+      ctx.stroke(bm ? [255, 255, 255] : rgb, 0.5);
+      if (bm) ctx.doc.setGState(new (ctx.doc as any).GState({ opacity: 0.35 }));
       polygon(ctx, pts, 'FD');
+      if (bm) ctx.doc.setGState(new (ctx.doc as any).GState({ opacity: 1 }));
       const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
       const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
       const rows = zoneStringRows(store, z, data);
-      ctx.t(`A${i + 1}`, cx, cy, { style: 'bold', size: 9, color: COLORS.ink, align: 'center' });
-      ctx.t(`${rows.length} str`, cx, cy + 3.6, { size: 6.5, color: COLORS.body, align: 'center' });
+      const labelColor: RGB = bm ? [255, 255, 255] : COLORS.ink;
+      ctx.t(`A${i + 1}`, cx, cy, { style: 'bold', size: 9, color: labelColor, align: 'center' });
+      ctx.t(`${rows.length} str`, cx, cy + 3.6, { size: 6.5, color: bm ? [255, 255, 255] : COLORS.body, align: 'center' });
     });
+    if (bm) {
+      ctx.t('Imagery © Google Maps', box.x + box.w - 2, box.y + box.h - 1.5, { size: 5.5, color: [255, 255, 255], align: 'right' });
+    }
     northArrow(ctx, box.x + box.w - 8, box.y + 9);
     scaleBar(ctx, view, box.x + 6, box.y + box.h - 5);
     ctx.y = box.y + box.h + 5;
@@ -570,8 +606,24 @@ function renderSchedule(ctx: ReportCtx, store: ProjectStore, data: GuideData): v
 
 /** Builds the installer stringing guide PDF. */
 export function generateStringingGuidePdf(store: ProjectStore, opts: StringingGuideOptions = {}): jsPDF {
+  const options = buildOptions(store, opts);
+  const bundle = collectReportBundleData(store, options);
+  const data = prepare(store, bundle);
+  data.basemap = opts.basemap ?? null;
+  const ctx = new ReportCtx(store, bundle, options, false, [], false);
+  ctx.reportTitle = 'SOLAR GEO PLANNER — ARRAY STRINGING GUIDE (INSTALLER COPY)';
+
+  const zones = bundle.targetZones;
+  renderOverview(ctx, store, data, 2);
+  zones.forEach((z, i) => renderArraySheet(ctx, store, data, z, i));
+  renderSchedule(ctx, store, data);
+  ctx.finalize();
+  return ctx.doc;
+}
+
+function buildOptions(store: ProjectStore, opts: StringingGuideOptions): ReportExportOptions {
   const systemId = opts.systemId ?? 'all';
-  const options: ReportExportOptions = {
+  return {
     projectTitle: opts.projectTitle || store.projectName || 'Solar Geo Project',
     clientName: opts.clientName ?? '',
     engineerName: opts.engineerName ?? '',
@@ -584,15 +636,45 @@ export function generateStringingGuidePdf(store: ProjectStore, opts: StringingGu
     includeSld: false,
     includeBoq: false
   };
-  const bundle = collectReportBundleData(store, options);
-  const data = prepare(store, bundle);
-  const ctx = new ReportCtx(store, bundle, options, false, [], false);
-  ctx.reportTitle = 'SOLAR GEO PLANNER — ARRAY STRINGING GUIDE (INSTALLER COPY)';
+}
 
-  const zones = bundle.targetZones;
-  renderOverview(ctx, store, data, 2);
-  zones.forEach((z, i) => renderArraySheet(ctx, store, data, z, i));
-  renderSchedule(ctx, store, data);
-  ctx.finalize();
-  return ctx.doc;
+/**
+ * Fetches satellite imagery for the guide's overview site plan (needs network access).
+ * Resolves null when imagery is unavailable, in which case the guide is drawn on plain paper.
+ */
+export async function prefetchStringingBasemap(
+  store: ProjectStore,
+  opts: StringingGuideOptions = {}
+): Promise<StringingBasemap | null> {
+  try {
+    const bundle = collectReportBundleData(store, buildOptions(store, opts));
+    const origin = store.center;
+    const pts = bundle.targetZones.flatMap(z => z.vertices.map(v => latLngToLocalMetric(v, origin)));
+    if (pts.length === 0) return null;
+    const b = boundsOf(pts);
+    // Large enough that the clipped plan box is always filled whatever its aspect ratio.
+    const sizeM = Math.max(b.maxX - b.minX, b.maxY - b.minY, 10) * 3 + 30;
+    const centerX = (b.minX + b.maxX) / 2;
+    const centerY = (b.minY + b.maxY) / 2;
+    const px = 2048;
+    const toMetric = (sx: number, sy: number) => ({
+      x: centerX + (sx / px - 0.5) * sizeM,
+      y: centerY - (sy / px - 0.5) * sizeM
+    });
+    const canvas = await renderSatelliteBasemapForView({
+      width: px,
+      height: px,
+      scale: px / sizeM,
+      lyrs: store.viewFilter?.basemap === 'google-satellite' ? 's' : 'y',
+      toLatLng: (sx, sy) => localMetricToLatLng(toMetric(sx, sy), origin),
+      toScreenPt: p => {
+        const m = latLngToLocalMetric(p, origin);
+        return { x: ((m.x - centerX) / sizeM + 0.5) * px, y: (0.5 - (m.y - centerY) / sizeM) * px };
+      }
+    });
+    if (!canvas) return null;
+    return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), centerX, centerY, sizeM };
+  } catch {
+    return null;
+  }
 }

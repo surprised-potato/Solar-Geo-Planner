@@ -5,6 +5,7 @@ import { ArrayZone, SolarSystem } from '../../types/solar';
 import { calculateGeodeticDistanceM } from '../../geo/projection';
 import type { RegistryModalUI } from '../registryModal';
 import { escapeHtml } from '../../utils/html';
+import { filterZones } from './registryFilters';
 
 /**
  * 3. RACEWAYS TABLE VIEW
@@ -14,14 +15,7 @@ export function renderRacewaysTable(
   zones: ArrayZone[],
   allSystems?: SolarSystem[]
 ): string {
-  let filteredZones = zones;
-  if (this.searchKeyword) {
-    const q = this.searchKeyword.toLowerCase();
-    filteredZones = filteredZones.filter(z => z.name.toLowerCase().includes(q) || z.id.toLowerCase().includes(q));
-  }
-  if (this.filterSystemId !== 'all') {
-    filteredZones = filteredZones.filter(z => z.systemId === this.filterSystemId);
-  }
+  const filteredZones = filterZones(zones, this.searchKeyword, this.filterSystemId);
 
   const systems = allSystems || this.store.getSystems();
 

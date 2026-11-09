@@ -10,6 +10,7 @@ import {
 } from '../../geo/projection';
 import type { MapController } from '../mapController';
 import { escapeHtml } from '../../utils/html';
+import { isMultiSelectClick } from '../mapEvents';
 
 export function renderZones(this: MapController): void {
   this.zoneLayerGroup.clearLayers();
@@ -80,15 +81,7 @@ export function renderZones(this: MapController): void {
       }
 
       L.DomEvent.stopPropagation(e);
-      const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
-      this.selectedHomerunSystemId = null;
-      this.selectedRacewayZoneId = null;
-      this.selectedInverterSystemId = null;
-      this.store.selectKeepOut(null);
-      this.selectedTableId = null;
-      this.store.selectZone(zone.id, isMulti);
-      this.updateMountTableStyles();
-      this.updateSelectionHud();
+      this.selectZoneFromMap(zone.id, isMultiSelectClick(e));
     });
 
     poly.on('contextmenu', (e: L.LeafletMouseEvent) => {
@@ -313,7 +306,7 @@ export function renderMountTables(this: MapController): void {
         }
 
         L.DomEvent.stopPropagation(e);
-        const isMulti = e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+        const isMulti = isMultiSelectClick(e);
         this.selectedHomerunSystemId = null;
         this.selectedRacewayZoneId = null;
         this.selectedInverterSystemId = null;

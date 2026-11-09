@@ -3,6 +3,7 @@
  */
 import { buildSldSystemModel } from '../../geo/sldModel';
 import type { SingleLineDiagramUI } from '../sldView';
+import { downloadBlob, downloadText, safeFileName } from '../../utils/download';
 
 /**
  * Export standalone SVG vector drawing
@@ -11,17 +12,9 @@ export function exportSvg(this: SingleLineDiagramUI): void {
   if (typeof document === 'undefined') return;
   const model = buildSldSystemModel(this.store, this.currentSystemId);
   const svgContent = this.generateStandaloneSvg(model);
-  const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const safeSysName = (model.system.name || 'System').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeSysName = safeFileName(model.system.name, 'System');
   const rotSuffix = this.rotation ? `_${this.rotation}deg` : '';
-  a.download = `${safeSysName}_Single_Line_Diagram_2D_Wireframe${rotSuffix}.svg`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  downloadText(svgContent, `${safeSysName}_Single_Line_Diagram_2D_Wireframe${rotSuffix}.svg`, 'image/svg+xml;charset=utf-8');
 }
 
 /**
@@ -58,21 +51,14 @@ export function exportPng(this: SingleLineDiagramUI): void {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      const safeSysName = (model.system.name || 'System').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSysName = safeFileName(model.system.name, 'System');
       const rotSuffix = this.rotation ? `_${this.rotation}deg` : '';
       const filename = `${safeSysName}_Single_Line_Diagram_2D_Wireframe${rotSuffix}.png`;
 
       if (canvas.toBlob) {
         canvas.toBlob(blob => {
           if (blob) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            downloadBlob(blob, filename);
           } else {
             const dataUrl = canvas.toDataURL('image/png');
             const a = document.createElement('a');

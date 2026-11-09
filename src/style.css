@@ -4,7 +4,9 @@
 */
 @import './styles/base.css'; /* Design tokens, reset and app shell */
 @import './styles/header.css'; /* Header navbar, project dropdown, location search and workspace layout */
-@import './styles/ribbon.css'; /* Top tabbed CAD ribbon, CAD controls, telemetry HUD, views tab and empty deck */
+@import './styles/ribbon.css'; /* Top tabbed CAD ribbon: command bar, tabs strip, collapsed strip and tool pods */
+@import './styles/ribbonControls.css'; /* CAD interactive controls and telemetry HUD badges */
+@import './styles/ribbonViews.css'; /* Views tab filter checklist and CAD empty deck */
 @import './styles/sidebar.css'; /* Sidebar, sections, segmented buttons, map container and floating view filter */
 @import './styles/inspector.css'; /* Floating inspector pane and its pods, compass and metrics */
 @import './styles/controls.css'; /* Buttons and map tooltips */

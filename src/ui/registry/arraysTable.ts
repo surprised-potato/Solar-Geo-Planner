@@ -6,6 +6,7 @@ import { calculateGeodeticDistanceM, computePolygonAreaSqM } from '../../geo/pro
 import type { RegistryModalUI } from '../registryModal';
 import { MountType } from '../../types/solar';
 import { escapeHtml } from '../../utils/html';
+import { filterZones } from './registryFilters';
 
 /**
  * 1. ARRAYS TABLE VIEW
@@ -16,14 +17,7 @@ export function renderArraysTable(
   zones: ArrayZone[],
   allSystems?: SolarSystem[]
 ): string {
-  let filteredZones = zones;
-  if (this.searchKeyword) {
-    const q = this.searchKeyword.toLowerCase();
-    filteredZones = filteredZones.filter(z => z.name.toLowerCase().includes(q) || z.id.toLowerCase().includes(q));
-  }
-  if (this.filterSystemId !== 'all') {
-    filteredZones = filteredZones.filter(z => z.systemId === this.filterSystemId);
-  }
+  const filteredZones = filterZones(zones, this.searchKeyword, this.filterSystemId);
 
   const systems = allSystems || this.store.getSystems();
   const modules = this.store.getModules();

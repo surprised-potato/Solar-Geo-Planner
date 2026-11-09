@@ -32,6 +32,18 @@ describe('Array stringing guide', () => {
     expect(doc.output('blob').size).toBeGreaterThan(5000);
   });
 
+  it('embeds satellite imagery behind the overview site plan when supplied', () => {
+    const jpeg =
+      'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    const plain = generateStringingGuidePdf(store, { reportDate: '2026-11-09' });
+    const withMap = generateStringingGuidePdf(store, {
+      reportDate: '2026-11-09',
+      basemap: { dataUrl: jpeg, centerX: 50, centerY: 30, sizeM: 400 }
+    });
+    expect(withMap.getNumberOfPages()).toBe(plain.getNumberOfPages());
+    expect(withMap.output('arraybuffer').byteLength).toBeGreaterThan(plain.output('arraybuffer').byteLength);
+  });
+
   it('scopes to one system when asked', () => {
     const all = generateStringingGuidePdf(store, {});
     const sys2 = store.getSystems()[1].id;

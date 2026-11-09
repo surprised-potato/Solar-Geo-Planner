@@ -14,6 +14,7 @@ import { attachModalListeners as attachModalListenersImpl } from './registry/reg
 import { exportActiveTabCsv as exportActiveTabCsvImpl } from './registry/registryCsvExport';
 import { renderKeepOutsTable as renderKeepOutsTableImpl } from './registry/keepOutsTable';
 import { escapeHtml } from '../utils/html';
+import { enableBackdropDismiss } from '../utils/dialog';
 
 export type TableViewTab = 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld' | 'boq';
 
@@ -36,27 +37,8 @@ export class RegistryModalUI {
     this.store = store;
     this.mapController = mapController;
 
-    this.setupFallbackLightDismiss();
+    enableBackdropDismiss(this.dialog, () => this.dialog.close());
     this.setupEventListeners();
-  }
-
-  private setupFallbackLightDismiss(): void {
-    if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
-      this.dialog.addEventListener('click', (event: MouseEvent) => {
-        if (event.target !== this.dialog) return;
-
-        const rect = this.dialog.getBoundingClientRect();
-        const isDialogContent =
-          rect.top <= event.clientY &&
-          event.clientY <= rect.top + rect.height &&
-          rect.left <= event.clientX &&
-          event.clientX <= rect.left + rect.width;
-
-        if (!isDialogContent) {
-          this.dialog.close();
-        }
-      });
-    }
   }
 
   public open(tab?: TableViewTab): void {

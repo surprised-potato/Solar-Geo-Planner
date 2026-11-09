@@ -132,6 +132,15 @@ export function getCompassHeading(deg: number): string {
 }
 
 /**
+ * Converts a heading to one of the 8 principal compass points (N, NE, E, ... NW).
+ */
+export function getCardinalDirection(deg: number): string {
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const normalized = ((deg % 360) + 360) % 360;
+  return directions[Math.floor((normalized + 22.5) / 45) % 8];
+}
+
+/**
  * Computes the downslope metric vector along which gravity / tilt falls, from high ridge to low eave.
  * In solar array geometry, panels face towards the azimuth direction, so the downward slope is parallel to azimuth.
  */

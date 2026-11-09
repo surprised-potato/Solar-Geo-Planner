@@ -2,7 +2,7 @@
  * Site works, mounting structure and DC raceway work items (D1–D3).
  */
 import { DupaWorkItem, DupaMaterialRow, DupaLaborRow, DupaEquipmentRow } from '../../../types/solar';
-import { recalculateDupaItem } from '../dupaMath';
+import { recalculateDupaItem, unpricedTotals } from '../dupaMath';
 import type { BoqContext } from '../boqContext';
 
 /** D1: Mobilization, Demobilization, Safety & Temporary Facilities */
@@ -67,18 +67,7 @@ export function buildD1Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d1Item;
 }
@@ -310,18 +299,7 @@ export function buildD2Item(ctx: BoqContext): DupaWorkItem {
     materials: d2Materials,
     labor: d2Labor,
     equipment: d2Equipment,
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d2Item;
 }
@@ -491,18 +469,7 @@ export function buildD3Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d3Item;
 }

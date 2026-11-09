@@ -2,7 +2,6 @@ import {
   AcFeederSummary,
   ArrayZone,
   DEFAULT_MODULE_MODELS,
-  GENERIC_INVERTER_PRESETS,
   InverterConfig,
   KeepOutPolygon,
   LatLngPoint,
@@ -24,12 +23,11 @@ import {
   FacilityLoadProfile,
   LoadProfileArchetype
 } from '../types/solar';
-import { calculateSolarSystemYield, SolarYieldResult } from '../geo/solarYield';
-import { createDefaultLoadProfile, scaleAnnualLoad, ARCHETYPE_DIURNAL_CURVES } from '../geo/loadProfile';
-import { simulateSolarAndLoadMatching, SimulationResult, SimulationOptions } from '../geo/energySimulation';
-import { generateBoqFromRegistryAndSld, recalculateDupaItem } from '../geo/boqCalculator';
-import { computePolygonAreaSqM, computePolygonCentroid } from '../geo/projection';
-import { sanitizeColor, sanitizeIdentifier } from '../utils/sanitizeProjectData';
+import { SolarYieldResult } from '../geo/solarYield';
+import { scaleAnnualLoad } from '../geo/loadProfile';
+import { SimulationResult, SimulationOptions } from '../geo/energySimulation';
+import { computePolygonAreaSqM } from '../geo/projection';
+import { sanitizeColor } from '../utils/sanitizeProjectData';
 import {
   exportProjectJson as exportProjectJsonImpl,
   exportProjectGeoJson as exportProjectGeoJsonImpl,
@@ -60,7 +58,7 @@ import {
   pasteZones as pasteZonesImpl,
   ClipboardZone
 } from './zoneActions';
-import { getSystemHomeruns as getSystemHomerunsImpl, pickNearestHomerun as pickNearestHomerunImpl } from '../geo/stringCabling';
+import { getSystemHomeruns as getSystemHomerunsImpl } from '../geo/stringCabling';
 import {
   moveSelectedZones as moveSelectedZonesImpl,
   moveSelectedZonesTo as moveSelectedZonesToImpl,
@@ -76,6 +74,13 @@ import {
   getSystemCableSummary as getSystemCableSummaryImpl,
   getAllCableSummaries as getAllCableSummariesImpl
 } from './cableSummaries';
+import { ensureDefaultSystem as ensureDefaultSystemImpl, updateModule as updateModuleImpl, setArrayModule as setArrayModuleImpl, selectSystem as selectSystemImpl, addSystem as addSystemImpl, updateSystemInverter as updateSystemInverterImpl, setSystemInverterPreset as setSystemInverterPresetImpl, setSystemInverterCapacity as setSystemInverterCapacityImpl, removeSystem as removeSystemImpl, linkZoneToSystem as linkZoneToSystemImpl, setSystemInverterLocation as setSystemInverterLocationImpl, setSystemAcInterconnectionLocation as setSystemAcInterconnectionLocationImpl, setSystemAcInterconnectionElevation as setSystemAcInterconnectionElevationImpl } from './systemActions';
+import { setZoneElevationDelta as setZoneElevationDeltaImpl, setZoneRaceway as setZoneRacewayImpl, updateRacewayVertices as updateRacewayVerticesImpl, addRacewayVertex as addRacewayVertexImpl, deleteRacewayVertex as deleteRacewayVertexImpl, setRacewayElevationChange as setRacewayElevationChangeImpl, clearZoneRaceway as clearZoneRacewayImpl, setSystemHomerun as setSystemHomerunImpl, findHomerun as findHomerunImpl, addSystemHomerun as addSystemHomerunImpl, updateSystemHomerunVertices as updateSystemHomerunVerticesImpl, addSystemHomerunVertex as addSystemHomerunVertexImpl, deleteSystemHomerunVertex as deleteSystemHomerunVertexImpl, setSystemHomerunElevation as setSystemHomerunElevationImpl, clearSystemHomerun as clearSystemHomerunImpl, getSystemHomerun as getSystemHomerunImpl, getHomerunForZone as getHomerunForZoneImpl, setSystemAcRaceway as setSystemAcRacewayImpl, updateSystemAcRacewayVertices as updateSystemAcRacewayVerticesImpl, addSystemAcRacewayVertex as addSystemAcRacewayVertexImpl, deleteSystemAcRacewayVertex as deleteSystemAcRacewayVertexImpl, setSystemAcRacewayElevation as setSystemAcRacewayElevationImpl, clearSystemAcRaceway as clearSystemAcRacewayImpl, getSystemAcRaceway as getSystemAcRacewayImpl } from './racewayActions';
+import { setMatchPropsMode as setMatchPropsModeImpl, toggleXRayMode as toggleXRayModeImpl, selectKeepOut as selectKeepOutImpl, getSelectedZones as getSelectedZonesImpl, getSelectedZoneIds as getSelectedZoneIdsImpl, selectZone as selectZoneImpl, selectAllZones as selectAllZonesImpl, clearZoneSelection as clearZoneSelectionImpl, selectPanel as selectPanelImpl, deleteSelected as deleteSelectedImpl } from './selectionActions';
+import { updateKeepOutVertices as updateKeepOutVerticesImpl, addKeepOutVertex as addKeepOutVertexImpl, deleteKeepOutVertex as deleteKeepOutVertexImpl, addKeepOut as addKeepOutImpl, removeKeepOut as removeKeepOutImpl, deleteKeepOut as deleteKeepOutImpl, reassignKeepOutZone as reassignKeepOutZoneImpl, updateKeepOutName as updateKeepOutNameImpl, getAllKeepOuts as getAllKeepOutsImpl } from './keepOutActions';
+import { getPanelsForSystem as getPanelsForSystemImpl, togglePanelActive as togglePanelActiveImpl, removePanel as removePanelImpl, updatePanelString as updatePanelStringImpl, updateStringAssignment as updateStringAssignmentImpl } from './panelActions';
+import { getSystemSummary as getSystemSummaryImpl, getSolarYieldEstimate as getSolarYieldEstimateImpl, setCustomSolarResource as setCustomSolarResourceImpl, getLoadProfile as getLoadProfileImpl, ensureLoadProfile as ensureLoadProfileImpl, applyLoadArchetype as applyLoadArchetypeImpl, updateMonthlyLoad as updateMonthlyLoadImpl, getSimulationResult as getSimulationResultImpl } from './energyActions';
+import { getBoqState as getBoqStateImpl, syncBoqFromCad as syncBoqFromCadImpl, updateBoqMarkups as updateBoqMarkupsImpl, updateDupaWorkItem as updateDupaWorkItemImpl, toggleLightningProtection as toggleLightningProtectionImpl } from './boqActions';
 
 export type DrawingMode = 'none' | 'zone' | 'keepout' | 'inverter' | 'raceway' | 'ac_interconnection' | 'ac_raceway' | 'match_props';
 
@@ -92,7 +97,20 @@ export interface MatchPropertiesOptions {
   autoOptimize?: boolean;       // Re-run grid shift optimizer after applying
 }
 
-const SYSTEM_COLORS = [
+export const DEFAULT_MATCH_PROPS_OPTIONS: Readonly<MatchPropertiesOptions> = {
+  matchModule: true,
+  matchMountType: true,
+  matchOrientation: true,
+  matchAzimuth: true,
+  matchTilt: true,
+  matchSpacing: true,
+  matchSetback: true,
+  matchTraverse: true,
+  matchSystem: false,
+  autoOptimize: false
+};
+
+export const SYSTEM_COLORS = [
   '#0284c7', // Sky
   '#10b981', // Emerald
   '#f59e0b', // Amber
@@ -134,28 +152,10 @@ export class ProjectStore {
   public drawingMode: DrawingMode = 'none';
   public drawingMountType: MountType = 'roof';
   public matchPropsSourceZoneId: string | null = null;
-  public matchPropsOptions: MatchPropertiesOptions = {
-    matchModule: true,
-    matchMountType: true,
-    matchOrientation: true,
-    matchAzimuth: true,
-    matchTilt: true,
-    matchSpacing: true,
-    matchSetback: true,
-    matchTraverse: true,
-    matchSystem: false,
-    autoOptimize: false
-  };
+  public matchPropsOptions: MatchPropertiesOptions = { ...DEFAULT_MATCH_PROPS_OPTIONS };
 
-  public setMatchPropsMode(enabled: boolean, sourceZoneId?: string | null): void {
-    if (enabled) {
-      this.matchPropsSourceZoneId = sourceZoneId || this.selectedZoneId || (this.zones.size > 0 ? this.zones.keys().next().value ?? null : null);
-      this.drawingMode = 'match_props';
-    } else {
-      this.matchPropsSourceZoneId = null;
-      this.drawingMode = 'none';
-    }
-    this.notify();
+  public setMatchPropsMode(enabled: boolean, sourceZoneId?: string | null) : void {
+    return setMatchPropsModeImpl.call(this, enabled, sourceZoneId);
   }
   public center: LatLngPoint = { lat: 37.7749, lng: -122.4194 };
   public zoom: number = 19;
@@ -216,22 +216,8 @@ export class ProjectStore {
     }
   }
 
-  ensureDefaultSystem(): void {
-    if (this.systems.size === 0) {
-      const defaultInverter: InverterConfig = {
-        ...GENERIC_INVERTER_PRESETS[0],
-        id: 'inv_default_1'
-      };
-      const defaultSys: SolarSystem = {
-        id: 'sys_default_1',
-        name: 'System 1: Main PV Array',
-        color: SYSTEM_COLORS[0],
-        inverter: defaultInverter,
-        zoneIds: []
-      };
-      this.systems.set(defaultSys.id, defaultSys);
-      this.selectedSystemId = defaultSys.id;
-    }
+  ensureDefaultSystem() : void {
+    return ensureDefaultSystemImpl.call(this);
   }
 
   public subscribe(listener: () => void): () => void {
@@ -263,39 +249,12 @@ export class ProjectStore {
     this.notify();
   }
 
-  public updateModule(moduleId: string, partial: Partial<ModuleModel>): void {
-    const mod = this.modules.get(moduleId);
-    if (!mod) return;
-    Object.assign(mod, partial);
-
-    // Update any zones using this module
-    for (const zone of this.zones.values()) {
-      if (zone.moduleId === moduleId) {
-        this.setArrayModule(zone.id, moduleId);
-      }
-    }
-    this.notify();
+  public updateModule(moduleId: string, partial: Partial<ModuleModel>) : void {
+    return updateModuleImpl.call(this, moduleId, partial);
   }
 
-  public setArrayModule(zoneId: string, moduleId: string): void {
-    const zone = this.zones.get(zoneId);
-    const mod = this.getModule(moduleId);
-    if (!zone || !mod) return;
-
-    zone.moduleId = moduleId;
-    zone.config.panelWidthMm = mod.widthMm;
-    zone.config.panelLengthMm = mod.lengthMm;
-    zone.config.electrical = {
-      modelName: mod.name,
-      nominalPowerW: mod.nominalPowerW,
-      voc: mod.voc,
-      vmp: mod.vmp,
-      isc: mod.isc,
-      imp: mod.imp
-    };
-
-    this.regenerateZonePanels(zoneId, false);
-    this.notify();
+  public setArrayModule(zoneId: string, moduleId: string) : void {
+    return setArrayModuleImpl.call(this, zoneId, moduleId);
   }
 
   // --- Systems & Inverter Management ---
@@ -319,48 +278,12 @@ export class ProjectStore {
     return this.getSystems()[0];
   }
 
-  public selectSystem(systemId: string | null, selectDefaultZone: boolean = true): void {
-    this.selectedSystemId = systemId;
-    if (systemId && selectDefaultZone) {
-      const sys = this.systems.get(systemId);
-      if (sys) {
-        const currentZone = this.getSelectedZone();
-        if (!currentZone || currentZone.systemId !== systemId) {
-          const firstZoneId = sys.zoneIds && sys.zoneIds.length > 0 ? sys.zoneIds[0] : null;
-          this.selectedZoneId = firstZoneId;
-          this.selectedZoneIds.clear();
-          if (firstZoneId) {
-            this.selectedZoneIds.add(firstZoneId);
-          }
-          this.selectedPanelId = null;
-        }
-      }
-    }
-    this.notify();
+  public selectSystem(systemId: string | null, selectDefaultZone: boolean = true) : void {
+    return selectSystemImpl.call(this, systemId, selectDefaultZone);
   }
 
-  public addSystem(name?: string, color?: string, inverter?: InverterConfig): SolarSystem {
-    const id = `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const sysNum = this.systems.size + 1;
-    const sysColor = color || SYSTEM_COLORS[(sysNum - 1) % SYSTEM_COLORS.length];
-    const sysName = name || `System ${sysNum}: Independent PV Substation`;
-    const defaultInverter = inverter || {
-      ...GENERIC_INVERTER_PRESETS[0],
-      id: `inv_${Date.now()}`
-    };
-
-    const newSys: SolarSystem = {
-      id,
-      name: sysName,
-      color: sysColor,
-      inverter: defaultInverter,
-      zoneIds: []
-    };
-
-    this.systems.set(id, newSys);
-    this.selectedSystemId = id;
-    this.notify();
-    return newSys;
+  public addSystem(name?: string, color?: string, inverter?: InverterConfig) : SolarSystem {
+    return addSystemImpl.call(this, name, color, inverter);
   }
 
   public updateSystem(systemId: string, partial: Partial<SolarSystem>): void {
@@ -370,116 +293,24 @@ export class ProjectStore {
     this.notify();
   }
 
-  public updateSystemInverter(systemId: string, partial: Partial<InverterConfig>): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    const prevCount = sys.inverter.inverterCount;
-    sys.inverter = { ...sys.inverter, ...partial };
-    const force = partial.inverterCount !== undefined && partial.inverterCount !== prevCount;
-    this.distributeStringsAcrossInverters(systemId, sys.inverter.inverterCount, force);
-    this.notify();
+  public updateSystemInverter(systemId: string, partial: Partial<InverterConfig>) : void {
+    return updateSystemInverterImpl.call(this, systemId, partial);
   }
 
-  public setSystemInverterPreset(systemId: string, presetId: string): void {
-    const sys = this.systems.get(systemId);
-    const preset = GENERIC_INVERTER_PRESETS.find(p => p.id === presetId);
-    if (!sys || !preset) return;
-    const currentCount = sys.inverter?.inverterCount || 1;
-    sys.inverter = { ...preset, inverterCount: currentCount };
-    this.distributeStringsAcrossInverters(systemId, currentCount, true);
-    this.notify();
+  public setSystemInverterPreset(systemId: string, presetId: string) : void {
+    return setSystemInverterPresetImpl.call(this, systemId, presetId);
   }
 
-  public setSystemInverterCapacity(systemId: string, ratedAcKw: number): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    const kw = Math.max(0.5, Number(ratedAcKw) || 10);
-    const currentCount = sys.inverter?.inverterCount || 1;
-    const matchingPreset = GENERIC_INVERTER_PRESETS.find(p => p.ratedAcPowerKw === kw);
-    if (matchingPreset) {
-      sys.inverter = {
-        ...sys.inverter,
-        ...matchingPreset,
-        ratedAcPowerKw: kw,
-        inverterCount: currentCount
-      };
-    } else {
-      sys.inverter = {
-        ...sys.inverter,
-        ratedAcPowerKw: kw,
-        inverterCount: currentCount
-      };
-    }
-    this.distributeStringsAcrossInverters(systemId, currentCount, true);
-    this.notify();
+  public setSystemInverterCapacity(systemId: string, ratedAcKw: number) : void {
+    return setSystemInverterCapacityImpl.call(this, systemId, ratedAcKw);
   }
 
-  public removeSystem(systemId: string, deleteContents: boolean = true): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-
-    if (deleteContents) {
-      const zoneIdsToDelete = Array.from(this.zones.values())
-        .filter(z => z.systemId === systemId)
-        .map(z => z.id);
-
-      for (const zId of zoneIdsToDelete) {
-        this.removeZone(zId);
-      }
-    } else {
-      const fallbackSys = this.getSystems().find(s => s.id !== systemId);
-      if (fallbackSys) {
-        for (const zone of this.zones.values()) {
-          if (zone.systemId === systemId) {
-            this.linkZoneToSystem(zone.id, fallbackSys.id);
-          }
-        }
-      }
-    }
-
-    this.systems.delete(systemId);
-
-    if (this.systems.size === 0) {
-      this.ensureDefaultSystem();
-    } else if (this.selectedSystemId === systemId) {
-      this.selectedSystemId = this.getSystems()[0].id;
-    }
-
-    this.notify();
+  public removeSystem(systemId: string, deleteContents: boolean = true) : void {
+    return removeSystemImpl.call(this, systemId, deleteContents);
   }
 
-  public linkZoneToSystem(zoneId: string, targetSystemId: string): void {
-    const zone = this.zones.get(zoneId);
-    const targetSys = this.systems.get(targetSystemId);
-    if (!zone || !targetSys) return;
-
-    if (zone.systemId && zone.systemId !== targetSystemId) {
-      const prevSys = this.systems.get(zone.systemId);
-      if (prevSys) {
-        prevSys.zoneIds = prevSys.zoneIds.filter(id => id !== zoneId);
-      }
-    }
-
-    zone.systemId = targetSystemId;
-    if (zone.raceway) {
-      zone.raceway.systemId = targetSystemId;
-    }
-    if (!targetSys.zoneIds.includes(zoneId)) {
-      targetSys.zoneIds.push(zoneId);
-    }
-
-    for (const panel of this.panels.values()) {
-      if (panel.zoneId === zoneId) {
-        panel.systemId = targetSystemId;
-        // Reset string state so the array doesn't retain old string assignments from the previous system
-        panel.stringId = null;
-        panel.stringOrder = null;
-        panel.mpptId = null;
-        panel.inverterIndex = null;
-      }
-    }
-
-    this.notify();
+  public linkZoneToSystem(zoneId: string, targetSystemId: string) : void {
+    return linkZoneToSystemImpl.call(this, zoneId, targetSystemId);
   }
 
   // --- Inverter Power House Geolocation & Array Elevation ---
@@ -488,18 +319,8 @@ export class ProjectStore {
     this.setSystemInverterLocation(systemId, null);
   }
 
-  public setSystemInverterLocation(
-    systemId: string,
-    location: LatLngPoint | null,
-    elevationM?: number
-  ): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    sys.inverterLocation = location;
-    if (elevationM !== undefined) {
-      sys.inverterElevationM = elevationM;
-    }
-    this.notify();
+  public setSystemInverterLocation( systemId: string, location: LatLngPoint | null, elevationM?: number ) : void {
+    return setSystemInverterLocationImpl.call(this, systemId, location, elevationM);
   }
 
   // --- AC Interconnection (PCC / Point of Common Coupling) ---
@@ -508,115 +329,48 @@ export class ProjectStore {
     this.setSystemAcInterconnectionLocation(systemId, null);
   }
 
-  public setSystemAcInterconnectionLocation(
-    systemId: string,
-    location: LatLngPoint | null,
-    elevationM?: number
-  ): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    sys.acInterconnectionLocation = location;
-    if (elevationM !== undefined) {
-      sys.acInterconnectionElevationM = elevationM;
-    }
-    this.notify();
+  public setSystemAcInterconnectionLocation( systemId: string, location: LatLngPoint | null, elevationM?: number ) : void {
+    return setSystemAcInterconnectionLocationImpl.call(this, systemId, location, elevationM);
   }
 
-  public setSystemAcInterconnectionElevation(systemId: string, elevationM: number): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    sys.acInterconnectionElevationM = Number(elevationM) || 0;
-    this.notify();
+  public setSystemAcInterconnectionElevation(systemId: string, elevationM: number) : void {
+    return setSystemAcInterconnectionElevationImpl.call(this, systemId, elevationM);
   }
 
-  public setZoneElevationDelta(zoneId: string, elevationDeltaM: number): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    zone.elevationDeltaM = Number(elevationDeltaM) || 0;
-    this.notify();
+  public setZoneElevationDelta(zoneId: string, elevationDeltaM: number) : void {
+    return setZoneElevationDeltaImpl.call(this, zoneId, elevationDeltaM);
   }
 
   // --- Raceway Cable Path Management ---
 
-  public setZoneRaceway(
-    zoneId: string,
-    path: LatLngPoint[],
-    elevationChangeM: number = 0,
-    name?: string
-  ): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-
-    zone.raceway = {
-      id: `rw_${zoneId}_${Date.now()}`,
-      name: name || `Raceway (${zone.name})`,
-      path,
-      elevationChangeM: Number(elevationChangeM) || 0,
-      systemId: zone.systemId
-    };
-    this.notify();
+  public setZoneRaceway( zoneId: string, path: LatLngPoint[], elevationChangeM: number = 0, name?: string ) : void {
+    return setZoneRacewayImpl.call(this, zoneId, path, elevationChangeM, name);
   }
 
-  public updateRacewayVertices(zoneId: string, path: LatLngPoint[]): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone || !zone.raceway) return;
-    zone.raceway.path = path;
-    this.notify();
+  public updateRacewayVertices(zoneId: string, path: LatLngPoint[]) : void {
+    return updateRacewayVerticesImpl.call(this, zoneId, path);
   }
 
-  public addRacewayVertex(zoneId: string, insertAfterIndex: number, point: LatLngPoint): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone || !zone.raceway) return;
-    const newPath = [...zone.raceway.path];
-    newPath.splice(insertAfterIndex + 1, 0, point);
-    this.updateRacewayVertices(zoneId, newPath);
+  public addRacewayVertex(zoneId: string, insertAfterIndex: number, point: LatLngPoint) : void {
+    return addRacewayVertexImpl.call(this, zoneId, insertAfterIndex, point);
   }
 
-  public deleteRacewayVertex(zoneId: string, vertexIndex: number): boolean {
-    const zone = this.zones.get(zoneId);
-    if (!zone || !zone.raceway || zone.raceway.path.length <= 2) return false;
-    const newPath = zone.raceway.path.filter((_, idx) => idx !== vertexIndex);
-    this.updateRacewayVertices(zoneId, newPath);
-    return true;
+  public deleteRacewayVertex(zoneId: string, vertexIndex: number) : boolean {
+    return deleteRacewayVertexImpl.call(this, zoneId, vertexIndex);
   }
 
-  public setRacewayElevationChange(zoneId: string, elevationM: number): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    if (zone.raceway) {
-      zone.raceway.elevationChangeM = Number(elevationM) || 0;
-    } else {
-      zone.elevationDeltaM = Number(elevationM) || 0;
-    }
-    this.notify();
+  public setRacewayElevationChange(zoneId: string, elevationM: number) : void {
+    return setRacewayElevationChangeImpl.call(this, zoneId, elevationM);
   }
 
-  public clearZoneRaceway(zoneId: string): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    zone.raceway = null;
-    this.notify();
+  public clearZoneRaceway(zoneId: string) : void {
+    return clearZoneRacewayImpl.call(this, zoneId);
   }
 
   // --- System Shared Homerun Raceway Management ---
 
-  public setSystemHomerun(
-    systemId: string,
-    path: LatLngPoint[],
-    elevationChangeM: number = 0,
-    name?: string
-  ): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-
-    sys.homerunRaceway = {
-      id: `rw_sys_${systemId}_${Date.now()}`,
-      name: name || `Homerun (${sys.name})`,
-      path,
-      elevationChangeM: Number(elevationChangeM) || 0,
-      systemId
-    };
-    this.notify();
+  public setSystemHomerun( systemId: string, path: LatLngPoint[], elevationChangeM: number = 0, name?: string ) : void {
+    return setSystemHomerunImpl.call(this, systemId, path, elevationChangeM, name);
   }
 
   /** All homerun trunks of a system (primary first, then extras). */
@@ -625,180 +379,75 @@ export class ProjectStore {
     return sys ? getSystemHomerunsImpl(sys) : [];
   }
 
-  private findHomerun(systemId: string, homerunId?: string): RacewayConfig | null {
-    const sys = this.systems.get(systemId);
-    if (!sys) return null;
-    if (!homerunId) return sys.homerunRaceway || sys.extraHomeruns?.[0] || null;
-    return getSystemHomerunsImpl(sys).find(h => h.id === homerunId) || null;
+  findHomerun(systemId: string, homerunId?: string) : RacewayConfig | null {
+    return findHomerunImpl.call(this, systemId, homerunId);
   }
 
   /**
    * Adds another homerun trunk to the system (the first one becomes the primary).
    * Returns the new trunk.
    */
-  public addSystemHomerun(
-    systemId: string,
-    path: LatLngPoint[],
-    elevationChangeM: number = 0,
-    name?: string
-  ): RacewayConfig | null {
-    const sys = this.systems.get(systemId);
-    if (!sys) return null;
-    const count = getSystemHomerunsImpl(sys).length;
-    const hr: RacewayConfig = {
-      id: `rw_sys_${systemId}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-      name: name || (count === 0 ? `Homerun (${sys.name})` : `Homerun ${count + 1} (${sys.name})`),
-      path,
-      elevationChangeM: Number(elevationChangeM) || 0,
-      systemId
-    };
-    if (!sys.homerunRaceway) {
-      sys.homerunRaceway = hr;
-    } else {
-      sys.extraHomeruns = [...(sys.extraHomeruns || []), hr];
-    }
-    this.notify();
-    return hr;
+  public addSystemHomerun( systemId: string, path: LatLngPoint[], elevationChangeM: number = 0, name?: string ) : RacewayConfig | null {
+    return addSystemHomerunImpl.call(this, systemId, path, elevationChangeM, name);
   }
 
-  public updateSystemHomerunVertices(systemId: string, path: LatLngPoint[], homerunId?: string): void {
-    const hr = this.findHomerun(systemId, homerunId);
-    if (!hr) return;
-    hr.path = path;
-    this.notify();
+  public updateSystemHomerunVertices(systemId: string, path: LatLngPoint[], homerunId?: string) : void {
+    return updateSystemHomerunVerticesImpl.call(this, systemId, path, homerunId);
   }
 
-  public addSystemHomerunVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint, homerunId?: string): void {
-    const hr = this.findHomerun(systemId, homerunId);
-    if (!hr) return;
-    const newPath = [...hr.path];
-    newPath.splice(insertAfterIndex + 1, 0, point);
-    this.updateSystemHomerunVertices(systemId, newPath, homerunId);
+  public addSystemHomerunVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint, homerunId?: string) : void {
+    return addSystemHomerunVertexImpl.call(this, systemId, insertAfterIndex, point, homerunId);
   }
 
-  public deleteSystemHomerunVertex(systemId: string, vertexIndex: number, homerunId?: string): boolean {
-    const hr = this.findHomerun(systemId, homerunId);
-    if (!hr || hr.path.length <= 2) return false;
-    const newPath = hr.path.filter((_, idx) => idx !== vertexIndex);
-    this.updateSystemHomerunVertices(systemId, newPath, homerunId);
-    return true;
+  public deleteSystemHomerunVertex(systemId: string, vertexIndex: number, homerunId?: string) : boolean {
+    return deleteSystemHomerunVertexImpl.call(this, systemId, vertexIndex, homerunId);
   }
 
-  public setSystemHomerunElevation(systemId: string, elevationM: number, homerunId?: string): void {
-    const hr = this.findHomerun(systemId, homerunId);
-    if (!hr) return;
-    hr.elevationChangeM = Number(elevationM) || 0;
-    this.notify();
+  public setSystemHomerunElevation(systemId: string, elevationM: number, homerunId?: string) : void {
+    return setSystemHomerunElevationImpl.call(this, systemId, elevationM, homerunId);
   }
 
   /** Removes one homerun trunk by id, or every trunk of the system when no id is given. */
-  public clearSystemHomerun(systemId: string, homerunId?: string): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    if (!homerunId) {
-      sys.homerunRaceway = null;
-      sys.extraHomeruns = [];
-    } else if (sys.homerunRaceway?.id === homerunId) {
-      // Promote the next trunk, if any, to primary.
-      const [next, ...rest] = sys.extraHomeruns || [];
-      sys.homerunRaceway = next ?? null;
-      sys.extraHomeruns = rest;
-    } else {
-      sys.extraHomeruns = (sys.extraHomeruns || []).filter(h => h.id !== homerunId);
-    }
-    this.notify();
+  public clearSystemHomerun(systemId: string, homerunId?: string) : void {
+    return clearSystemHomerunImpl.call(this, systemId, homerunId);
   }
 
-  public getSystemHomerun(systemId?: string, homerunId?: string): RacewayConfig | null {
-    const targetSysId = systemId || this.selectedSystemId;
-    if (!targetSysId) return null;
-    if (homerunId) return this.findHomerun(targetSysId, homerunId);
-    return this.systems.get(targetSysId)?.homerunRaceway || null;
+  public getSystemHomerun(systemId?: string, homerunId?: string) : RacewayConfig | null {
+    return getSystemHomerunImpl.call(this, systemId, homerunId);
   }
 
-  public getHomerunForZone(zoneId: string): RacewayConfig | null {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return null;
-    if (zone.raceway && (!zone.raceway.systemId || zone.raceway.systemId === zone.systemId)) {
-      return zone.raceway;
-    }
-    if (zone.systemId) {
-      const sys = this.systems.get(zone.systemId);
-      const homeruns = getSystemHomerunsImpl(sys);
-      if (homeruns.length > 1 && zone.vertices.length > 0) {
-        return pickNearestHomerunImpl(homeruns, computePolygonCentroid(zone.vertices)) || sys?.homerunRaceway || null;
-      }
-      return sys?.homerunRaceway || null;
-    }
-    return null;
+  public getHomerunForZone(zoneId: string) : RacewayConfig | null {
+    return getHomerunForZoneImpl.call(this, zoneId);
   }
 
   // --- System AC Feeder Raceway Management ---
 
-  public setSystemAcRaceway(
-    systemId: string,
-    path: LatLngPoint[],
-    elevationChangeM: number = 0,
-    name?: string
-  ): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-
-    sys.acRaceway = {
-      id: `rw_ac_${systemId}_${Date.now()}`,
-      name: name || `AC Feeder (${sys.name})`,
-      path,
-      elevationChangeM: Number(elevationChangeM) || 0,
-      systemId,
-      racewayType: 'ac_feeder'
-    };
-    this.notify();
+  public setSystemAcRaceway( systemId: string, path: LatLngPoint[], elevationChangeM: number = 0, name?: string ) : void {
+    return setSystemAcRacewayImpl.call(this, systemId, path, elevationChangeM, name);
   }
 
-  public updateSystemAcRacewayVertices(systemId: string, path: LatLngPoint[]): void {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.acRaceway) return;
-    sys.acRaceway.path = path;
-    this.notify();
+  public updateSystemAcRacewayVertices(systemId: string, path: LatLngPoint[]) : void {
+    return updateSystemAcRacewayVerticesImpl.call(this, systemId, path);
   }
 
-  public addSystemAcRacewayVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint): void {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.acRaceway) return;
-    const newPath = [...sys.acRaceway.path];
-    newPath.splice(insertAfterIndex + 1, 0, point);
-    this.updateSystemAcRacewayVertices(systemId, newPath);
+  public addSystemAcRacewayVertex(systemId: string, insertAfterIndex: number, point: LatLngPoint) : void {
+    return addSystemAcRacewayVertexImpl.call(this, systemId, insertAfterIndex, point);
   }
 
-  public deleteSystemAcRacewayVertex(systemId: string, vertexIndex: number): boolean {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.acRaceway || sys.acRaceway.path.length <= 2) return false;
-    const newPath = sys.acRaceway.path.filter((_, idx) => idx !== vertexIndex);
-    this.updateSystemAcRacewayVertices(systemId, newPath);
-    return true;
+  public deleteSystemAcRacewayVertex(systemId: string, vertexIndex: number) : boolean {
+    return deleteSystemAcRacewayVertexImpl.call(this, systemId, vertexIndex);
   }
 
-  public setSystemAcRacewayElevation(systemId: string, elevationM: number): void {
-    const sys = this.systems.get(systemId);
-    if (!sys || !sys.acRaceway) return;
-    sys.acRaceway.elevationChangeM = Number(elevationM) || 0;
-    this.notify();
+  public setSystemAcRacewayElevation(systemId: string, elevationM: number) : void {
+    return setSystemAcRacewayElevationImpl.call(this, systemId, elevationM);
   }
 
-  public clearSystemAcRaceway(systemId: string): void {
-    const sys = this.systems.get(systemId);
-    if (!sys) return;
-    sys.acRaceway = null;
-    this.notify();
+  public clearSystemAcRaceway(systemId: string) : void {
+    return clearSystemAcRacewayImpl.call(this, systemId);
   }
 
-  public getSystemAcRaceway(systemId?: string): RacewayConfig | null {
-    const targetSysId = systemId || this.selectedSystemId;
-    if (targetSysId) {
-      const sys = this.systems.get(targetSysId);
-      return sys?.acRaceway || null;
-    }
-    return null;
+  public getSystemAcRaceway(systemId?: string) : RacewayConfig | null {
+    return getSystemAcRacewayImpl.call(this, systemId);
   }
 
   public getSystemAcFeederSummary(systemId: string): AcFeederSummary {
@@ -865,22 +514,12 @@ export class ProjectStore {
     return getActiveViewPresetImpl.call(this);
   }
 
-  public toggleXRayMode(): void {
-    const nextState = !this.viewFilter.xRayMode;
-    this.viewFilter.xRayMode = nextState;
-    if (nextState) {
-      this.viewFilter.panelVisibility = 'hidden';
-      this.viewFilter.showArrayFill = false;
-    } else {
-      this.viewFilter.panelVisibility = 'full';
-      this.viewFilter.showArrayFill = true;
-    }
-    this.notify();
+  public toggleXRayMode() : void {
+    return toggleXRayModeImpl.call(this);
   }
 
-  public selectKeepOut(keepOutId: string | null): void {
-    this.selectedKeepOutId = keepOutId;
-    this.notify();
+  public selectKeepOut(keepOutId: string | null) : void {
+    return selectKeepOutImpl.call(this, keepOutId);
   }
 
   // --- Zones Management ---
@@ -902,26 +541,12 @@ export class ProjectStore {
     return this.selectedZoneId ? this.zones.get(this.selectedZoneId) : undefined;
   }
 
-  public getSelectedZones(): ArrayZone[] {
-    if (this.selectedPanelId !== null) return [];
-    const list: ArrayZone[] = [];
-    for (const id of this.selectedZoneIds) {
-      const z = this.zones.get(id);
-      if (z) list.push(z);
-    }
-    if (list.length === 0 && this.selectedZoneId) {
-      const z = this.zones.get(this.selectedZoneId);
-      if (z) list.push(z);
-    }
-    return list;
+  public getSelectedZones() : ArrayZone[] {
+    return getSelectedZonesImpl.call(this);
   }
 
-  public getSelectedZoneIds(): string[] {
-    if (this.selectedPanelId !== null) return [];
-    if (this.selectedZoneIds.size > 0) {
-      return Array.from(this.selectedZoneIds);
-    }
-    return this.selectedZoneId ? [this.selectedZoneId] : [];
+  public getSelectedZoneIds() : string[] {
+    return getSelectedZoneIdsImpl.call(this);
   }
 
   public isZoneSelected(zoneId: string): boolean {
@@ -940,17 +565,8 @@ export class ProjectStore {
     return Array.from(this.panels.values()).filter(p => p.zoneId === zoneId);
   }
 
-  public getPanelsForSystem(systemId: string): SolarPanelObject[] {
-    return Array.from(this.panels.values()).filter(p => {
-      const z = this.zones.get(p.zoneId);
-      if (z) {
-        if (p.systemId !== z.systemId) {
-          p.systemId = z.systemId;
-        }
-        return z.systemId === systemId;
-      }
-      return p.systemId === systemId;
-    });
+  public getPanelsForSystem(systemId: string) : SolarPanelObject[] {
+    return getPanelsForSystemImpl.call(this, systemId);
   }
 
   public getPanel(panelId: string): SolarPanelObject | undefined {
@@ -964,70 +580,20 @@ export class ProjectStore {
     this.notify();
   }
 
-  public selectZone(zoneId: string | null, isMulti: boolean = false): void {
-    if (zoneId === null) {
-      this.selectedZoneId = null;
-      this.selectedZoneIds.clear();
-      this.selectedPanelId = null;
-      this.notify();
-      return;
-    }
-
-    if (isMulti) {
-      if (this.selectedZoneId && !this.selectedZoneIds.has(this.selectedZoneId)) {
-        this.selectedZoneIds.add(this.selectedZoneId);
-      }
-      if (this.selectedZoneIds.has(zoneId)) {
-        this.selectedZoneIds.delete(zoneId);
-        if (this.selectedZoneId === zoneId) {
-          this.selectedZoneId = this.selectedZoneIds.values().next().value ?? null;
-        }
-      } else {
-        this.selectedZoneIds.add(zoneId);
-        this.selectedZoneId = zoneId;
-      }
-    } else {
-      this.selectedZoneIds.clear();
-      this.selectedZoneIds.add(zoneId);
-      this.selectedZoneId = zoneId;
-    }
-
-    this.selectedPanelId = null;
-    const z = this.zones.get(zoneId);
-    if (z) {
-      this.selectedSystemId = z.systemId;
-    }
-    this.notify();
+  public selectZone(zoneId: string | null, isMulti: boolean = false) : void {
+    return selectZoneImpl.call(this, zoneId, isMulti);
   }
 
-  public selectAllZones(): void {
-    this.selectedZoneIds.clear();
-    for (const z of this.zones.values()) {
-      this.selectedZoneIds.add(z.id);
-    }
-    this.selectedZoneId = this.selectedZoneIds.values().next().value ?? null;
-    this.selectedPanelId = null;
-    this.notify();
+  public selectAllZones() : void {
+    return selectAllZonesImpl.call(this);
   }
 
-  public clearZoneSelection(): void {
-    this.selectedZoneId = null;
-    this.selectedZoneIds.clear();
-    this.selectedPanelId = null;
-    this.notify();
+  public clearZoneSelection() : void {
+    return clearZoneSelectionImpl.call(this);
   }
 
-  public selectPanel(panelId: string | null): void {
-    this.selectedPanelId = panelId;
-    if (panelId) {
-      const p = this.panels.get(panelId);
-      if (p) {
-        this.selectedSystemId = p.systemId;
-      }
-      this.selectedZoneId = null;
-      this.selectedZoneIds.clear();
-    }
-    this.notify();
+  public selectPanel(panelId: string | null) : void {
+    return selectPanelImpl.call(this, panelId);
   }
 
   public copySelectedZones(): number {
@@ -1108,44 +674,16 @@ export class ProjectStore {
     return true;
   }
 
-  public updateKeepOutVertices(
-    zoneId: string,
-    keepOutId: string,
-    vertices: LatLngPoint[],
-    optimize: boolean = false,
-    steps: number = 12
-  ): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    const ko = zone.keepOuts.find(k => k.id === keepOutId);
-    if (!ko) return;
-    ko.vertices = vertices;
-    if (optimize) {
-      this.optimizeZoneGridShift(zoneId, steps);
-    } else {
-      this.regenerateZonePanels(zoneId, false);
-      this.notify();
-    }
+  public updateKeepOutVertices( zoneId: string, keepOutId: string, vertices: LatLngPoint[], optimize: boolean = false, steps: number = 12 ) : void {
+    return updateKeepOutVerticesImpl.call(this, zoneId, keepOutId, vertices, optimize, steps);
   }
 
-  public addKeepOutVertex(zoneId: string, keepOutId: string, insertAfterIndex: number, point: LatLngPoint): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    const ko = zone.keepOuts.find(k => k.id === keepOutId);
-    if (!ko) return;
-    const newVertices = [...ko.vertices];
-    newVertices.splice(insertAfterIndex + 1, 0, point);
-    this.updateKeepOutVertices(zoneId, keepOutId, newVertices, true);
+  public addKeepOutVertex(zoneId: string, keepOutId: string, insertAfterIndex: number, point: LatLngPoint) : void {
+    return addKeepOutVertexImpl.call(this, zoneId, keepOutId, insertAfterIndex, point);
   }
 
-  public deleteKeepOutVertex(zoneId: string, keepOutId: string, vertexIndex: number): boolean {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return false;
-    const ko = zone.keepOuts.find(k => k.id === keepOutId);
-    if (!ko || ko.vertices.length <= 3) return false;
-    const newVertices = ko.vertices.filter((_, idx) => idx !== vertexIndex);
-    this.updateKeepOutVertices(zoneId, keepOutId, newVertices, true);
-    return true;
+  public deleteKeepOutVertex(zoneId: string, keepOutId: string, vertexIndex: number) : boolean {
+    return deleteKeepOutVertexImpl.call(this, zoneId, keepOutId, vertexIndex);
   }
 
   public updateZoneConfig(
@@ -1238,302 +776,82 @@ export class ProjectStore {
     this.notify();
   }
 
-  public addKeepOut(zoneId: string, vertices: LatLngPoint[]): KeepOutPolygon | undefined {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return undefined;
-
-    const keepOutId = `ko_${Date.now()}`;
-    const keepOut: KeepOutPolygon = {
-      id: keepOutId,
-      name: `Obstacle ${zone.keepOuts.length + 1}`,
-      vertices
-    };
-
-    zone.keepOuts.push(keepOut);
-    this.regenerateZonePanels(zoneId, false);
-    this.notify();
-    return keepOut;
+  public addKeepOut(zoneId: string, vertices: LatLngPoint[]) : KeepOutPolygon | undefined {
+    return addKeepOutImpl.call(this, zoneId, vertices);
   }
 
-  public removeKeepOut(zoneId: string, keepOutId: string): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-
-    zone.keepOuts = zone.keepOuts.filter(k => k.id !== keepOutId);
-    if (this.selectedKeepOutId === keepOutId) {
-      this.selectedKeepOutId = null;
-    }
-    this.regenerateZonePanels(zoneId, false);
-    this.notify();
+  public removeKeepOut(zoneId: string, keepOutId: string) : void {
+    return removeKeepOutImpl.call(this, zoneId, keepOutId);
   }
 
-  public deleteKeepOut(keepOutId: string): boolean {
-    for (const zone of this.zones.values()) {
-      if (zone.keepOuts.some(k => k.id === keepOutId)) {
-        this.removeKeepOut(zone.id, keepOutId);
-        return true;
-      }
-    }
-    return false;
+  public deleteKeepOut(keepOutId: string) : boolean {
+    return deleteKeepOutImpl.call(this, keepOutId);
   }
 
   public deleteZone(zoneId: string): void {
     this.removeZone(zoneId);
   }
 
-  public deleteSelected(): 'keepout' | 'zones' | 'zone' | null {
-    if (this.selectedPanelId) {
-      const pid = this.selectedPanelId;
-      this.togglePanelActive(pid);
-      return null;
-    }
-    if (this.selectedKeepOutId) {
-      const koId = this.selectedKeepOutId;
-      if (this.deleteKeepOut(koId)) {
-        return 'keepout';
-      }
-    }
-    if (this.selectedZoneIds.size > 1) {
-      const ids = Array.from(this.selectedZoneIds);
-      ids.forEach(id => this.removeZone(id));
-      this.selectedZoneIds.clear();
-      this.selectedZoneId = null;
-      return 'zones';
-    }
-    if (this.selectedZoneId) {
-      const id = this.selectedZoneId;
-      this.removeZone(id);
-      return 'zone';
-    }
-    return null;
+  public deleteSelected() : 'keepout' | 'zones' | 'zone' | null {
+    return deleteSelectedImpl.call(this);
   }
 
-  public reassignKeepOutZone(currentZoneId: string, keepOutId: string, targetZoneId: string): boolean {
-    if (currentZoneId === targetZoneId) return false;
-    const currentZone = this.zones.get(currentZoneId);
-    const targetZone = this.zones.get(targetZoneId);
-    if (!currentZone || !targetZone) return false;
-
-    const koIndex = currentZone.keepOuts.findIndex(k => k.id === keepOutId);
-    if (koIndex === -1) return false;
-
-    const [ko] = currentZone.keepOuts.splice(koIndex, 1);
-    targetZone.keepOuts.push(ko);
-
-    if (this.selectedKeepOutId === keepOutId) {
-      this.selectedZoneId = targetZoneId;
-    }
-
-    this.regenerateZonePanels(currentZoneId, false);
-    this.regenerateZonePanels(targetZoneId, false);
-    this.notify();
-    return true;
+  public reassignKeepOutZone(currentZoneId: string, keepOutId: string, targetZoneId: string) : boolean {
+    return reassignKeepOutZoneImpl.call(this, currentZoneId, keepOutId, targetZoneId);
   }
 
-  public updateKeepOutName(zoneId: string, keepOutId: string, name: string): void {
-    const zone = this.zones.get(zoneId);
-    if (!zone) return;
-    const ko = zone.keepOuts.find(k => k.id === keepOutId);
-    if (!ko) return;
-    ko.name = name.trim() || ko.name;
-    this.notify();
+  public updateKeepOutName(zoneId: string, keepOutId: string, name: string) : void {
+    return updateKeepOutNameImpl.call(this, zoneId, keepOutId, name);
   }
 
-  public getAllKeepOuts(): { keepOut: KeepOutPolygon; zoneId: string; zoneName: string; systemId: string }[] {
-    const list: { keepOut: KeepOutPolygon; zoneId: string; zoneName: string; systemId: string }[] = [];
-    for (const zone of this.zones.values()) {
-      for (const ko of zone.keepOuts) {
-        list.push({
-          keepOut: ko,
-          zoneId: zone.id,
-          zoneName: zone.name,
-          systemId: zone.systemId
-        });
-      }
-    }
-    return list;
+  public getAllKeepOuts() : { keepOut: KeepOutPolygon; zoneId: string; zoneName: string; systemId: string }[] {
+    return getAllKeepOutsImpl.call(this);
   }
 
   public regenerateZonePanels(zoneId: string, shouldNotify: boolean = true): void {
     return regenerateZonePanelsImpl.call(this, zoneId, shouldNotify);
   }
 
-  public togglePanelActive(panelId: string): void {
-    const panel = this.panels.get(panelId);
-    if (!panel) return;
-
-    panel.active = !panel.active;
-    const zone = this.zones.get(panel.zoneId);
-    if (zone) {
-      const zonePanels = this.getPanelsForZone(panel.zoneId);
-      zone.activePanelCount = zonePanels.filter(p => p.active).length;
-      const totalWp = zonePanels.reduce(
-        (sum, p) => (p.active ? sum + p.electrical.nominalPowerW : sum),
-        0
-      );
-      zone.totalKwp = Number((totalWp / 1000).toFixed(2));
-    }
-
-    this.layoutVersion++;
-    this.notify();
+  public togglePanelActive(panelId: string) : void {
+    return togglePanelActiveImpl.call(this, panelId);
   }
 
-  public removePanel(panelId: string): void {
-    const panel = this.panels.get(panelId);
-    if (!panel) return;
-
-    this.panels.delete(panelId);
-    if (this.selectedPanelId === panelId) {
-      this.selectedPanelId = null;
-    }
-
-    const zone = this.zones.get(panel.zoneId);
-    if (zone) {
-      const zonePanels = this.getPanelsForZone(panel.zoneId);
-      zone.panelCount = zonePanels.length;
-      zone.activePanelCount = zonePanels.filter(p => p.active).length;
-      const totalWp = zonePanels.reduce(
-        (sum, p) => (p.active ? sum + p.electrical.nominalPowerW : sum),
-        0
-      );
-      zone.totalKwp = Number((totalWp / 1000).toFixed(2));
-    }
-
-    this.layoutVersion++;
-    this.notify();
+  public removePanel(panelId: string) : void {
+    return removePanelImpl.call(this, panelId);
   }
 
-  public updatePanelString(
-    panelId: string,
-    stringId: string | null,
-    stringOrder: number | null,
-    mpptId?: string | null,
-    inverterIndex?: number | null
-  ): void {
-    const panel = this.panels.get(panelId);
-    if (!panel) return;
-    panel.stringId = stringId === null ? null : sanitizeIdentifier(stringId);
-    panel.stringOrder = stringOrder;
-    if (mpptId !== undefined) panel.mpptId = mpptId;
-    if (inverterIndex !== undefined) panel.inverterIndex = inverterIndex;
-    this.notify();
+  public updatePanelString( panelId: string, stringId: string | null, stringOrder: number | null, mpptId?: string | null, inverterIndex?: number | null ) : void {
+    return updatePanelStringImpl.call(this, panelId, stringId, stringOrder, mpptId, inverterIndex);
   }
 
   public renameString(oldStringId: string, newStringId: string): void {
     return renameStringImpl.call(this, oldStringId, newStringId);
   }
 
-  public updateStringAssignment(
-    stringId: string,
-    inverterIndex?: number,
-    mpptId?: string
-  ): void {
-    for (const panel of this.panels.values()) {
-      if (panel.stringId === stringId) {
-        if (inverterIndex !== undefined) panel.inverterIndex = inverterIndex;
-        if (mpptId !== undefined) panel.mpptId = mpptId;
-      }
-    }
-    this.notify();
+  public updateStringAssignment( stringId: string, inverterIndex?: number, mpptId?: string ) : void {
+    return updateStringAssignmentImpl.call(this, stringId, inverterIndex, mpptId);
   }
 
-  public getSystemSummary(filterSystemId?: string): {
-    totalSystems: number;
-    totalZones: number;
-    totalPanels: number;
-    totalActivePanels: number;
-    totalKwp: number;
-    totalAreaSqM: number;
-    systemName?: string;
-    inverterAcKw: number;
-    dcAcRatio: number;
-  } {
-    const allSystems = this.getSystems();
-    const isSpecific = Boolean(filterSystemId && filterSystemId !== 'all');
-    const zones = isSpecific
-      ? this.getZones().filter(z => z.systemId === filterSystemId)
-      : this.getZones();
-    const panels = isSpecific
-      ? this.getPanels().filter(p => p.systemId === filterSystemId)
-      : this.getPanels();
-
-    const activePanels = panels.filter(p => p.active);
-    const totalKwp = activePanels.reduce(
-      (sum, p) => sum + p.electrical.nominalPowerW / 1000.0,
-      0
-    );
-    const totalAreaSqM = zones.reduce((sum, z) => sum + z.areaSqM, 0);
-    const currentSys = isSpecific ? this.systems.get(filterSystemId!) : undefined;
-
-    let inverterAcKw = 0;
-    if (isSpecific && currentSys) {
-      inverterAcKw = currentSys.inverter.inverterCount * currentSys.inverter.ratedAcPowerKw;
-    } else {
-      inverterAcKw = allSystems.reduce(
-        (sum, s) => sum + s.inverter.inverterCount * s.inverter.ratedAcPowerKw,
-        0
-      );
-    }
-
-    const dcAcRatio = inverterAcKw > 0 ? Number((totalKwp / inverterAcKw).toFixed(2)) : 0;
-
-    return {
-      totalSystems: allSystems.length,
-      totalZones: zones.length,
-      totalPanels: panels.length,
-      totalActivePanels: activePanels.length,
-      totalKwp: Number(totalKwp.toFixed(2)),
-      totalAreaSqM: Math.round(totalAreaSqM),
-      systemName: currentSys?.name,
-      inverterAcKw,
-      dcAcRatio
-    };
+  public getSystemSummary(filterSystemId?: string) : { totalSystems: number; totalZones: number; totalPanels: number; totalActivePanels: number; totalKwp: number; totalAreaSqM: number; systemName?: string; inverterAcKw: number; dcAcRatio: number; } {
+    return getSystemSummaryImpl.call(this, filterSystemId);
   }
 
-  public getSolarYieldEstimate(filterSystemId?: string): SolarYieldResult {
-    const summary = this.getSystemSummary(filterSystemId);
-    const zones = this.getZones();
-    const systems = this.getSystems();
-    const cableSummary = filterSystemId && filterSystemId !== 'all'
-      ? this.getSystemCableSummary(filterSystemId)
-      : null;
-    const acFeeder = filterSystemId && filterSystemId !== 'all'
-      ? this.getSystemAcFeederSummary(filterSystemId)
-      : null;
-
-    return calculateSolarSystemYield({
-      projectCenter: this.center,
-      totalKwp: summary.totalKwp,
-      zones,
-      systems,
-      targetSystemId: filterSystemId,
-      cableSummary,
-      acFeeder,
-      customResource: this.customSolarResource
-    });
+  public getSolarYieldEstimate(filterSystemId?: string) : SolarYieldResult {
+    return getSolarYieldEstimateImpl.call(this, filterSystemId);
   }
 
-  public setCustomSolarResource(resource: CustomSolarResource | null): void {
-    this.customSolarResource = resource;
-    this.notify();
+  public setCustomSolarResource(resource: CustomSolarResource | null) : void {
+    return setCustomSolarResourceImpl.call(this, resource);
   }
 
   // --- Existing Facility Load Profile Management ---
 
-  public getLoadProfile(systemId?: string): FacilityLoadProfile | null {
-    if (!this.loadProfile) return null;
-    if (systemId && systemId !== 'all' && this.loadProfile.systemId && this.loadProfile.systemId !== systemId) {
-      return null;
-    }
-    return this.loadProfile;
+  public getLoadProfile(systemId?: string) : FacilityLoadProfile | null {
+    return getLoadProfileImpl.call(this, systemId);
   }
 
-  public ensureLoadProfile(systemId?: string): FacilityLoadProfile {
-    if (!this.loadProfile) {
-      this.loadProfile = createDefaultLoadProfile(360000, 'commercial_office', 'Facility Main Meter Load', systemId);
-      this.notify();
-    }
-    return this.loadProfile;
+  public ensureLoadProfile(systemId?: string) : FacilityLoadProfile {
+    return ensureLoadProfileImpl.call(this, systemId);
   }
 
   public setLoadProfile(profile: FacilityLoadProfile | null): void {
@@ -1547,51 +865,16 @@ export class ProjectStore {
     this.notify();
   }
 
-  public applyLoadArchetype(archetype: LoadProfileArchetype): void {
-    const current = this.ensureLoadProfile();
-    const curveSet = ARCHETYPE_DIURNAL_CURVES[archetype] || ARCHETYPE_DIURNAL_CURVES.commercial_office;
-    this.loadProfile = {
-      ...current,
-      archetype,
-      defaultDailyCurve: [...curveSet.weekday],
-      weekendDailyCurve: [...curveSet.weekend],
-      hasWeekendProfile: archetype !== 'industrial_24_7',
-      updatedAt: new Date().toISOString()
-    };
-    this.notify();
+  public applyLoadArchetype(archetype: LoadProfileArchetype) : void {
+    return applyLoadArchetypeImpl.call(this, archetype);
   }
 
-  public updateMonthlyLoad(monthIndex: number, kwh: number, peakKw?: number, costPhp?: number): void {
-    const current = this.ensureLoadProfile();
-    if (monthIndex < 0 || monthIndex >= 12) return;
-
-    const updatedBreakdown = [...current.monthlyBreakdown];
-    const prev = updatedBreakdown[monthIndex];
-    updatedBreakdown[monthIndex] = {
-      ...prev,
-      consumptionKwh: Math.max(0, Math.round(kwh)),
-      peakDemandKw: peakKw !== undefined ? Number(peakKw.toFixed(1)) : prev.peakDemandKw,
-      energyCostPhp: costPhp !== undefined ? Math.round(costPhp) : prev.energyCostPhp
-    };
-
-    const newAnnualKwh = updatedBreakdown.reduce((sum, m) => sum + m.consumptionKwh, 0);
-
-    this.loadProfile = {
-      ...current,
-      annualKwh: newAnnualKwh,
-      monthlyBreakdown: updatedBreakdown,
-      updatedAt: new Date().toISOString()
-    };
-    this.notify();
+  public updateMonthlyLoad(monthIndex: number, kwh: number, peakKw?: number, costPhp?: number) : void {
+    return updateMonthlyLoadImpl.call(this, monthIndex, kwh, peakKw, costPhp);
   }
 
-  public getSimulationResult(
-    systemId?: string,
-    options?: Partial<SimulationOptions>
-  ): SimulationResult {
-    const solarYield = this.getSolarYieldEstimate(systemId);
-    const loadProfile = this.ensureLoadProfile(systemId);
-    return simulateSolarAndLoadMatching(solarYield, loadProfile, options);
+  public getSimulationResult( systemId?: string, options?: Partial<SimulationOptions> ) : SimulationResult {
+    return getSimulationResultImpl.call(this, systemId, options);
   }
 
   public exportProjectJson(compact: boolean = false): string {
@@ -1629,72 +912,24 @@ export class ProjectStore {
 
   // --- Bill of Quantities (BOQ) & Detailed Unit Price Analysis (DUPA) Management ---
 
-  public getBoqState(systemId?: string, forceRegenerate: boolean = false): ProjectBoqState {
-    let needsRefresh = !this.boqState || forceRegenerate;
-    if (!needsRefresh && this.boqState) {
-      // Auto-reconcile if CAD has ground tables that are missing in saved BOQ
-      const groundTablesInCad = this.getZones().reduce((acc, z) => {
-        if (z.config?.mountType === 'ground') {
-          return acc + (z.tableCount ?? (z.tables ? z.tables.length : 0));
-        }
-        return acc;
-      }, 0);
-      const d2 = this.boqState.items?.find(it => it.itemNo === 'D2');
-      const hasTableInD2 = d2?.materials?.some(
-        m => m.autoSourceKey === 'd2_ground_table_racking' || m.description.toLowerCase().includes('table')
-      );
-      if (groundTablesInCad > 0 && !hasTableInD2) {
-        needsRefresh = true;
-      }
-    }
-    if (needsRefresh || !this.boqState) {
-      this.boqState = generateBoqFromRegistryAndSld(this, systemId, this.boqState || undefined);
-    }
-    return this.boqState;
+  public getBoqState(systemId?: string, forceRegenerate: boolean = false) : ProjectBoqState {
+    return getBoqStateImpl.call(this, systemId, forceRegenerate);
   }
 
-  public syncBoqFromCad(systemId?: string, resetRates: boolean = false): ProjectBoqState {
-    this.boqState = generateBoqFromRegistryAndSld(
-      this,
-      systemId,
-      resetRates ? undefined : (this.boqState || undefined)
-    );
-    this.notify();
-    return this.boqState;
+  public syncBoqFromCad(systemId?: string, resetRates: boolean = false) : ProjectBoqState {
+    return syncBoqFromCadImpl.call(this, systemId, resetRates);
   }
 
-  public updateBoqMarkups(ocmPercent: number, profitPercent: number, vatPercent: number): void {
-    const boq = this.getBoqState();
-    boq.ocmPercent = Math.max(0, ocmPercent);
-    boq.profitPercent = Math.max(0, profitPercent);
-    boq.vatPercent = Math.max(0, vatPercent);
-    for (let i = 0; i < boq.items.length; i++) {
-      boq.items[i].ocmPercent = boq.ocmPercent;
-      boq.items[i].profitPercent = boq.profitPercent;
-      boq.items[i].vatPercent = boq.vatPercent;
-      boq.items[i] = recalculateDupaItem(boq.items[i]);
-    }
-    this.notify();
+  public updateBoqMarkups(ocmPercent: number, profitPercent: number, vatPercent: number) : void {
+    return updateBoqMarkupsImpl.call(this, ocmPercent, profitPercent, vatPercent);
   }
 
-  public updateDupaWorkItem(itemNo: string, updater: (item: DupaWorkItem) => DupaWorkItem): void {
-    const boq = this.getBoqState();
-    const idx = boq.items.findIndex(it => it.itemNo === itemNo);
-    if (idx >= 0) {
-      const updated = updater({ ...boq.items[idx] });
-      boq.items[idx] = recalculateDupaItem(updated);
-      this.notify();
-    }
+  public updateDupaWorkItem(itemNo: string, updater: (item: DupaWorkItem) => DupaWorkItem) : void {
+    return updateDupaWorkItemImpl.call(this, itemNo, updater);
   }
 
-  public toggleLightningProtection(include?: boolean): void {
-    const boq = this.getBoqState();
-    const current = boq.includeLightningProtection === true;
-    const target = include !== undefined ? include : !current;
-    boq.includeLightningProtection = target;
-    // Re-generate BOQ preserving user rates and markups
-    this.boqState = generateBoqFromRegistryAndSld(this, undefined, boq);
-    this.notify();
+  public toggleLightningProtection(include?: boolean) : void {
+    return toggleLightningProtectionImpl.call(this, include);
   }
 
   public sanitizeStringIntegrity(): void {

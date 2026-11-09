@@ -1,5 +1,5 @@
 import { ProjectStore } from '../store/projectStore';
-import { generateStringingGuidePdf } from '../report/stringingGuide';
+import { generateStringingGuidePdf, prefetchStringingBasemap } from '../report/stringingGuide';
 
 function remembered(key: string): string {
   try {
@@ -10,9 +10,11 @@ function remembered(key: string): string {
 }
 
 /** Builds the installer stringing guide and downloads it as a PDF. */
-export function downloadStringingGuide(store: ProjectStore, systemId: string = 'all'): void {
+export async function downloadStringingGuide(store: ProjectStore, systemId: string = 'all'): Promise<void> {
+  const basemap = await prefetchStringingBasemap(store, { systemId });
   const doc = generateStringingGuidePdf(store, {
     systemId,
+    basemap,
     clientName: remembered('sgp_report_client_name'),
     engineerName: remembered('sgp_report_engineer_name')
   });
