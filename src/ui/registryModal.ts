@@ -13,14 +13,19 @@ import { renderSldTab as renderSldTabImpl, renderBoqTab as renderBoqTabImpl } fr
 import { attachModalListeners as attachModalListenersImpl } from './registry/registryEvents';
 import { exportActiveTabCsv as exportActiveTabCsvImpl } from './registry/registryCsvExport';
 import { renderKeepOutsTable as renderKeepOutsTableImpl } from './registry/keepOutsTable';
+import { renderBuildingsTable as renderBuildingsTableImpl } from './registry/buildingsTable';
+import { renderEquipmentTable as renderEquipmentTableImpl } from './registry/equipmentTable';
 import { escapeHtml } from '../utils/html';
+import type { BoqAndDupaUI } from './boqView';
+import { enableBackdropDismiss } from '../utils/dialog';
 
-export type TableViewTab = 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld' | 'boq';
+export type TableViewTab = 'buildings' | 'equipment' | 'arrays' | 'systems' | 'raceways' | 'keepouts' | 'strings' | 'panels' | 'sld' | 'boq';
 
 export class RegistryModalUI {
   dialog: HTMLDialogElement;
   store: ProjectStore;
   mapController?: MapController;
+  boqUi?: BoqAndDupaUI;
   activeTab: TableViewTab = 'arrays';
   filterSystemId: string = 'all';
   filterZoneId: string = 'all';
@@ -36,27 +41,8 @@ export class RegistryModalUI {
     this.store = store;
     this.mapController = mapController;
 
-    this.setupFallbackLightDismiss();
+    enableBackdropDismiss(this.dialog, () => this.dialog.close());
     this.setupEventListeners();
-  }
-
-  private setupFallbackLightDismiss(): void {
-    if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
-      this.dialog.addEventListener('click', (event: MouseEvent) => {
-        if (event.target !== this.dialog) return;
-
-        const rect = this.dialog.getBoundingClientRect();
-        const isDialogContent =
-          rect.top <= event.clientY &&
-          event.clientY <= rect.top + rect.height &&
-          rect.left <= event.clientX &&
-          event.clientX <= rect.left + rect.width;
-
-        if (!isDialogContent) {
-          this.dialog.close();
-        }
-      });
-    }
   }
 
   public open(tab?: TableViewTab): void {
@@ -158,6 +144,12 @@ export class RegistryModalUI {
     // Render Tab Buttons Header
     const tabsHtml = `
       <div class="table-view-tabs" role="tablist">
+        <button class="tbl-tab-btn ${this.activeTab === 'buildings' ? 'active' : ''}" data-tab="buildings">
+          🐔 Buildings (${this.store.buildings.size})
+        </button>
+        <button class="tbl-tab-btn ${this.activeTab === 'equipment' ? 'active' : ''}" data-tab="equipment">
+          🔋 Equipment
+        </button>
         <button class="tbl-tab-btn ${this.activeTab === 'arrays' ? 'active' : ''}" data-tab="arrays">
           📐 Arrays (${zones.length}${isFiltered ? `/${allZones.length}` : ''})
         </button>
@@ -249,6 +241,12 @@ export class RegistryModalUI {
     let contentHtml = '';
 
     switch (this.activeTab) {
+      case 'buildings':
+        contentHtml = renderBuildingsTableImpl.call(this);
+        break;
+      case 'equipment':
+        contentHtml = renderEquipmentTableImpl.call(this);
+        break;
       case 'arrays':
         contentHtml = this.renderArraysTable(zones, allSystems);
         break;

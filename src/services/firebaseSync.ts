@@ -15,6 +15,7 @@ import {
   QuerySnapshot,
   DocumentData
 } from 'firebase/firestore';
+import { decodeProjectPayload, encodeProjectPayload } from './payloadCodec';
 import {
   getAuth,
   onAuthStateChanged,
@@ -396,7 +397,7 @@ export class FirebaseSyncService {
       }
 
       const docData = docSnap.data();
-      const remoteJson = docData?.dataJson;
+      const remoteJson = docData?.dataJson ? decodeProjectPayload(docData.dataJson) : docData?.dataJson;
       this.activeProjectOwnerUid = typeof docData?.ownerUid === 'string' ? docData.ownerUid : null;
       if (docData?.createdAt) {
         this.activeProjectCreatedAt = String(docData.createdAt);
@@ -505,7 +506,7 @@ export class FirebaseSyncService {
         name: this.store.projectName || 'Solar Geo Project',
         createdAt: createdAtToUse,
         updatedAt: nowIso,
-        dataJson: currentJson,
+        dataJson: encodeProjectPayload(currentJson),
         zoneCount: this.store.getZones().length,
         totalKwp: stats.totalKwp
       }, { merge: true });
@@ -543,11 +544,12 @@ export class FirebaseSyncService {
           this.projectCreatedAtMap.set(projectId, String(d.createdAt));
         }
         if (d.dataJson) {
+          const plainJson = decodeProjectPayload(d.dataJson);
           this.isApplyingRemoteUpdate = true;
-          this.lastSyncedJson = d.dataJson;
-          this.lastSyncedComparableJson = this.getComparablePayload(d.dataJson);
+          this.lastSyncedJson = plainJson;
+          this.lastSyncedComparableJson = this.getComparablePayload(plainJson);
           this.hasInitialLoadForProject.add(projectId);
-          this.store.importProjectJson(d.dataJson);
+          this.store.importProjectJson(plainJson);
           this.isApplyingRemoteUpdate = false;
         }
       }
@@ -586,7 +588,7 @@ export class FirebaseSyncService {
       name: cleanName,
       createdAt: nowIso,
       updatedAt: nowIso,
-      dataJson: currentJson,
+      dataJson: encodeProjectPayload(currentJson),
       zoneCount: 0,
       totalKwp: 0
     });

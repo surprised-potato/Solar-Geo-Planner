@@ -2,6 +2,7 @@ import { ProjectStore } from '../store/projectStore';
 import { ReportExportOptions } from '../report/reportTypes';
 import { generatePvsystPdf } from '../report/pdfReportGenerator';
 import { escapeHtml } from '../utils/html';
+import { safeFileName } from '../utils/download';
 
 export class PdfReportModalUI {
   private container: HTMLElement;
@@ -154,7 +155,7 @@ export class PdfReportModalUI {
     try {
       const options = this.getOptions();
       const doc = await generatePvsystPdf(this.store, options);
-      const safeName = (this.store.projectName || 'Solar_Project').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeName = safeFileName(this.store.projectName);
       const filename = `${safeName}_PVsyst_Engineering_Report_${Date.now()}.pdf`;
       doc.save(filename);
     } catch (err) {

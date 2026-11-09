@@ -2,7 +2,7 @@
  * CSV exports for the BOQ / DUPA sheet and the costed bill of materials.
  */
 import { ProjectBoqState } from '../../types/solar';
-import { getBoqProjectTotal, normalizeDupaQuotes } from './dupaMath';
+import { getBoqProjectTotal, getBoqSectionTotals, normalizeDupaQuotes, templateNoOf } from './dupaMath';
 
 function formatCsvCell(val: string | number | undefined | null): string {
   if (val == null) return '';
@@ -16,7 +16,11 @@ function formatCsvCell(val: string | number | undefined | null): string {
 /**
  * Exports both BOQ Schedule and DUPA Breakdown in CSV format
  */
-export function exportBoqAndDupaCsv(projectName: string, boq: ProjectBoqState): string {
+export function exportBoqAndDupaCsv(
+  projectName: string,
+  boq: ProjectBoqState,
+  sections?: Map<string, { code: string; name: string }>
+): string {
   const exportDate = new Date().toLocaleDateString('en-US');
   const totals = getBoqProjectTotal(boq);
 
@@ -30,8 +34,14 @@ export function exportBoqAndDupaCsv(projectName: string, boq: ProjectBoqState): 
   lines.push('Item No.,Category,Work Description,Quantity,Unit,Unit Cost (PHP),Total Cost (PHP)');
   lines.push('Solar Works,,,,,,');
 
-  for (const it of boq.items) {
-    lines.push(`${it.itemNo},${formatCsvCell(it.category)},${formatCsvCell(it.description)},${it.quantity},${formatCsvCell(it.unit)},${it.unitCostPerItemPhp},${it.totalItemCostPhp}`);
+  const hasSections = boq.items.some(i => i.sectionId);
+  for (const group of getBoqSectionTotals(boq)) {
+    const sec = group.sectionId ? sections?.get(group.sectionId) : undefined;
+    if (hasSections) lines.push(`${formatCsvCell(sec ? `${sec.code} - ${sec.name}` : 'Other Systems')},,,,,,`);
+    for (const it of group.items) {
+      lines.push(`${it.itemNo},${formatCsvCell(it.category)},${formatCsvCell(it.description)},${it.quantity},${formatCsvCell(it.unit)},${it.unitCostPerItemPhp},${it.totalItemCostPhp}`);
+    }
+    if (hasSections) lines.push(`,,Subtotal${sec ? ` (${formatCsvCell(sec.code)})` : ''},,,,${group.total}`);
   }
 
   lines.push(`,,Subtotal (Solar Works),,,,${totals.subtotalSolarWorks}`);
@@ -124,7 +134,10 @@ export function extractCostedBom(boq: ProjectBoqState): CostedBomItem[] {
     D10: 'Main Distribution Panel & Switchgear',
     D11: 'AC Feeder Cables & Conduits',
     D12: 'Grounding & Lightning Protection',
-    D13: 'Testing, Labelling & Handover'
+    D13: 'Testing, Labelling & Handover',
+    E1: 'Battery Energy Storage',
+    I1: 'Primary Line & Interconnection Hardware',
+    I2: 'Switching Station & Revenue Metering'
   };
 
   for (const dupa of boq.items) {
@@ -134,7 +147,7 @@ export function extractCostedBom(boq: ProjectBoqState): CostedBomItem[] {
         itemNo: `M${String(seq).padStart(2, '0')}`,
         dupaItemNo: dupa.itemNo,
         dupaWorkDescription: dupa.description,
-        category: categoryMap[dupa.itemNo] || 'General Materials',
+        category: categoryMap[templateNoOf(dupa)] || 'General Materials',
         description: mat.description,
         quantity: mat.quantity,
         unit: mat.unit,

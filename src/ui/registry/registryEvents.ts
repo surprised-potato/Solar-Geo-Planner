@@ -11,6 +11,8 @@ import { attachKeepOutsTableListeners } from './keepOutsTable';
 import { attachRacewaysTableListeners } from './racewaysTable';
 import { attachSystemsTableListeners } from './systemsTable';
 import { attachArraysTableListeners } from './arraysTable';
+import { attachBuildingsTableListeners } from './buildingsTable';
+import { attachEquipmentTableListeners } from './equipmentTable';
 
 export function attachModalListeners(this: RegistryModalUI): void {
   if (this.activeTab === 'sld') {
@@ -24,7 +26,13 @@ export function attachModalListeners(this: RegistryModalUI): void {
   if (this.activeTab === 'boq') {
     const mountEl = this.dialog.querySelector('#modal-boq-mount') as HTMLElement;
     if (mountEl) {
-      new BoqAndDupaUI(mountEl, this.store, this.filterSystemId);
+      // One long-lived view: re-creating it on every modal render leaked store subscribers and
+      // reset the BOQ tab back to the summary after each edit.
+      if (this.boqUi) {
+        this.boqUi.rebind(mountEl, this.filterSystemId);
+      } else {
+        this.boqUi = new BoqAndDupaUI(mountEl, this.store, this.filterSystemId);
+      }
     }
   }
 
@@ -91,6 +99,8 @@ export function attachModalListeners(this: RegistryModalUI): void {
     });
   });
 
+  attachBuildingsTableListeners.call(this);
+  attachEquipmentTableListeners.call(this);
   attachArraysTableListeners.call(this);
   attachSystemsTableListeners.call(this);
   attachRacewaysTableListeners.call(this);

@@ -2,7 +2,7 @@
  * PV modules, DC wiring and DC protection work items (D4–D6).
  */
 import { DupaWorkItem } from '../../../types/solar';
-import { recalculateDupaItem } from '../dupaMath';
+import { recalculateDupaItem, unpricedTotals } from '../dupaMath';
 import type { BoqContext } from '../boqContext';
 
 /** D4: PV Panels */
@@ -81,18 +81,7 @@ export function buildD4Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d4Item;
 }
@@ -182,18 +171,7 @@ export function buildD5Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d5Item;
 }
@@ -303,18 +281,7 @@ export function buildD6Item(ctx: BoqContext): DupaWorkItem {
         amountPhp: 0
       }
     ],
-    totalMaterialsPhp: 0,
-    totalLaborPhp: 0,
-    totalEquipmentPhp: 0,
-    estimatedDirectCostPhp: 0,
-    ocmPercent,
-    ocmAmountPhp: 0,
-    profitPercent,
-    profitAmountPhp: 0,
-    vatPercent,
-    vatAmountPhp: 0,
-    totalItemCostPhp: 0,
-    unitCostPerItemPhp: 0
+    ...unpricedTotals(ocmPercent, profitPercent, vatPercent)
   });
   return d6Item;
 }

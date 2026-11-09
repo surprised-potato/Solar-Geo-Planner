@@ -11,6 +11,7 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-solar-geo \"vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "firebase": "^13.2.0",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4"

@@ -19,6 +19,7 @@ import { renderAcTab as renderAcTabImpl } from './ribbon/acTab';
 import { renderTiltCrossSectionSvg as renderTiltCrossSectionSvgImpl } from './ribbon/tiltCrossSection';
 import { attachEventListeners as attachEventListenersImpl } from './ribbon/ribbonEvents';
 import { escapeHtml } from '../utils/html';
+import { getCardinalDirection } from '../geo/projection';
 
 export type RibbonTab = 'home' | 'orientation' | 'spacing' | 'obstacles' | 'module' | 'stringing' | 'ac' | 'views' | 'reports';
 
@@ -424,15 +425,7 @@ export class RibbonUI {
   }
 
   getCompassHeading(deg: number): string {
-    const d = ((deg % 360) + 360) % 360;
-    if (d >= 337.5 || d < 22.5) return 'N';
-    if (d >= 22.5 && d < 67.5) return 'NE';
-    if (d >= 67.5 && d < 112.5) return 'E';
-    if (d >= 112.5 && d < 157.5) return 'SE';
-    if (d >= 157.5 && d < 202.5) return 'S';
-    if (d >= 202.5 && d < 247.5) return 'SW';
-    if (d >= 247.5 && d < 292.5) return 'W';
-    return 'NW';
+    return getCardinalDirection(deg);
   }
 
   /**

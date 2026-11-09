@@ -47,7 +47,9 @@ export function exportProjectJson(this: ProjectStore, compact: boolean = false):
     stringTraverseDirection: this.stringTraverseDirection,
     boqData: this.boqState || undefined,
     customSolarResource: this.customSolarResource || undefined,
-    loadProfile: this.loadProfile || undefined
+    loadProfile: this.loadProfile || undefined,
+    sections: this.sections.size > 0 ? [...this.sections.values()] : undefined,
+    buildings: this.buildings.size > 0 ? [...this.buildings.values()] : undefined
   };
   return compact ? JSON.stringify(data) : JSON.stringify(data, null, 2);
 }
@@ -262,6 +264,8 @@ export function importProjectJson(this: ProjectStore, jsonStr: string): boolean 
     this.systems.clear();
     this.zones.clear();
     this.panels.clear();
+    this.sections.clear();
+    this.buildings.clear();
 
     this.projectName = data.projectName || 'Imported Solar Project';
     if (data.center) this.center = data.center;
@@ -373,6 +377,21 @@ export function importProjectJson(this: ProjectStore, jsonStr: string): boolean 
           zone.activePanelCount = activeCount;
           zone.totalKwp = Number((totalWp / 1000).toFixed(2));
         }
+      }
+    }
+
+    if (Array.isArray(data.sections)) {
+      for (const sec of data.sections) {
+        sec.systemIds = (sec.systemIds || []).filter(id => this.systems.has(id));
+        this.sections.set(sec.id, sec);
+      }
+    }
+    if (Array.isArray(data.buildings)) {
+      for (const b of data.buildings) {
+        // Drop zones that no longer exist and buildings whose farm section is gone
+        if (!this.sections.has(b.sectionId)) continue;
+        b.zoneIds = (b.zoneIds || []).filter(id => this.zones.has(id));
+        this.buildings.set(b.id, b);
       }
     }
 

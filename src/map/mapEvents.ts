@@ -350,3 +350,20 @@ export function fitSelectedElement(this: MapController): void {
     return;
   }
 }
+
+/** True when a map click should add to the selection (Shift / Ctrl / Cmd held). */
+export function isMultiSelectClick(e: L.LeafletMouseEvent): boolean {
+  return e.originalEvent.shiftKey || e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+}
+
+/** Selects an array from a click on its polygon or tilt badge, clearing other map selections. */
+export function selectZoneFromMap(this: MapController, zoneId: string, isMulti: boolean): void {
+  this.selectedHomerunSystemId = null;
+  this.selectedRacewayZoneId = null;
+  this.selectedInverterSystemId = null;
+  this.store.selectKeepOut(null);
+  this.selectedTableId = null;
+  this.store.selectZone(zoneId, isMulti);
+  this.updateMountTableStyles();
+  this.updateSelectionHud();
+}

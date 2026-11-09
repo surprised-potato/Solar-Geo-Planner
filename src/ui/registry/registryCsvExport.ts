@@ -8,6 +8,7 @@ import {
 } from '../../geo/projection';
 import { exportBoqAndDupaCsv } from '../../geo/boqCalculator';
 import type { RegistryModalUI } from '../registryModal';
+import { downloadCsv, rowsToCsv, safeFileName } from '../../utils/download';
 
 /**
  * Exports the currently active table view as a clean, standardized CSV file.
@@ -17,9 +18,50 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
   let rows: string[][] = [];
   const isFiltered = this.filterSystemId !== 'all';
   const activeSys = isFiltered ? this.store.getSystem(this.filterSystemId) : undefined;
-  const sysSlug = activeSys ? `_${activeSys.name.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '_all_systems';
+  const sysSlug = activeSys ? `_${safeFileName(activeSys.name)}` : '_all_systems';
 
   switch (this.activeTab) {
+    case 'equipment': {
+      filename = `battery_and_interconnection_${Date.now()}.csv`;
+      rows = [['Section_Code', 'Section_Name', 'Kind', 'BESS_MWh', 'BESS_MW', 'Chemistry', 'Line_km', 'Pole_Span_m', 'Voltage_kV']];
+      for (const sec of this.store.sections.values()) {
+        rows.push([
+          sec.code, sec.name, sec.kind,
+          String(sec.bess?.capacityMwh ?? ''), String(sec.bess?.powerMw ?? ''), sec.bess?.chemistry ?? '',
+          String(sec.interconnection?.lineLengthKm ?? ''), String(sec.interconnection?.poleSpanM ?? ''),
+          String(sec.interconnection?.voltageKv ?? '')
+        ]);
+      }
+      break;
+    }
+
+    case 'buildings': {
+      filename = `poultry_houses_schedule_${Date.now()}.csv`;
+      rows = [
+        ['Farm_Code', 'Farm_Name', 'House_ID', 'House_Name', 'Length_M', 'Width_M', 'Heading_Deg', 'Eave_Height_M', 'Ridge_Height_M', 'Roof_Type', 'Purlin_Spacing_M', 'Corrosion_Class', 'Roof_Planes', 'Active_Panels', 'Capacity_kWp']
+      ];
+      for (const b of this.store.buildings.values()) {
+        const sec = this.store.sections.get(b.sectionId);
+        let panels = 0;
+        let kwp = 0;
+        for (const zoneId of b.zoneIds) {
+          const z = this.store.getZone(zoneId);
+          if (z) {
+            panels += z.activePanelCount;
+            kwp += z.totalKwp;
+          }
+        }
+        rows.push([
+          sec?.code || '', sec?.name || '', b.id, b.name,
+          b.lengthM.toFixed(2), b.widthM.toFixed(2), b.headingDeg.toFixed(1),
+          b.eaveHeightM.toFixed(2), b.ridgeHeightM.toFixed(2), b.roofType,
+          String(b.purlinSpacingM), b.corrosionClass, String(b.zoneIds.length),
+          String(panels), kwp.toFixed(2)
+        ]);
+      }
+      break;
+    }
+
     case 'arrays': {
       filename = `solar_arrays_schedule${sysSlug}_${Date.now()}.csv`;
       rows = [
@@ -436,7 +478,7 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
 
     case 'sld': {
       const sys = (isFiltered ? activeSys : undefined) || this.store.getSelectedSystem() || this.store.getSystems()[0];
-      filename = `sld_system_${sys?.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.csv`;
+      filename = `sld_system_${safeFileName(sys?.name, 'System')}_${Date.now()}.csv`;
       const sum = this.store.getSystemSummary(sys?.id);
       rows = [
         ['System_ID', 'System_Name', 'Total_DC_kWp', 'Inverter_AC_kW', 'DC_AC_Ratio', 'Strings_Count', 'Inverter_Model'],
@@ -455,29 +497,11 @@ export function exportActiveTabCsv(this: RegistryModalUI): void {
 
     case 'boq': {
       const boq = this.store.getBoqState(this.filterSystemId);
-      const csvContent = exportBoqAndDupaCsv(this.store.projectName, boq);
-      filename = `${this.store.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}_BOQ_and_DUPA_${Date.now()}.csv`;
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const csvContent = exportBoqAndDupaCsv(this.store.projectName, boq, this.store.sections);
+      downloadCsv(csvContent, `${safeFileName(this.store.projectName)}_BOQ_and_DUPA_${Date.now()}.csv`);
       return;
     }
   }
 
-  const csvContent = rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCsv(rowsToCsv(rows), filename);
 }

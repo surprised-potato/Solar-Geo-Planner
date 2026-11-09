@@ -1,9 +1,7 @@
 import {
   ArrayZone,
-  InverterConfig,
   LatLngPoint,
   MetricPoint,
-  ModuleModel,
   MountTableObject,
   RoofRailObject,
   SolarPanelObject
@@ -18,6 +16,8 @@ import {
   isPanelValid,
   offsetPolygonInward
 } from './polygonMath';
+export { optimizeGridShift } from './gridOptimizer';
+export { calculateStringLimits, calculateRecommendedRowSpacing } from './stringLimits';
 
 /**
  * Rotates a 2D metric point (x, y) into the array orientation frame (u, v) aligned with azimuth.
@@ -558,159 +558,4 @@ export function generatePanelsForZone(
   });
 
   return { panels, usableAreaSqM, tables, rails };
-}
-
-/**
- * Sweeps candidate grid phase offsets (X, Y) to find the alignment that maximizes total panels.
- */
-export function optimizeGridShift(
-  zone: ArrayZone,
-  steps: number = 12
-): {
-  optimalOffsetX: number;
-  optimalOffsetY: number;
-  maxPanelCount: number;
-  previousPanelCount: number;
-} {
-  const isPortrait = zone.config.orientation === 'portrait';
-  const physWidthM = isPortrait
-    ? zone.config.panelWidthMm / 1000.0
-    : zone.config.panelLengthMm / 1000.0;
-  const physLengthM = isPortrait
-    ? zone.config.panelLengthMm / 1000.0
-    : zone.config.panelWidthMm / 1000.0;
-
-  const tiltRad = (zone.config.tiltDeg * Math.PI) / 180.0;
-  const projectedDepthM = physLengthM * Math.cos(tiltRad);
-
-  const isGround = zone.config.mountType === 'ground';
-  let deltaU: number;
-  let deltaV: number;
-
-  if (isGround) {
-    const modulesUp = Math.max(1, zone.config.modulesPerTableUp ?? 2);
-    const modulesWide = Math.max(1, zone.config.modulesPerTableWide ?? 14);
-    const intraModGapU = Math.max(0.005, zone.config.colSpacingM ?? 0.02);
-    const intraModGapV = Math.max(0.005, zone.config.intraTableSpacingM ?? 0.02);
-    const tableGapU = Math.max(0.05, zone.config.tableSpacingM ?? 1.0);
-
-    const tableWidthM = modulesWide * physWidthM + (modulesWide - 1) * intraModGapU;
-    const tableDepthM = modulesUp * projectedDepthM + (modulesUp - 1) * intraModGapV;
-
-    deltaU = tableWidthM + tableGapU;
-    deltaV =
-      zone.config.rowSpacingM >= tableDepthM + 0.2
-        ? zone.config.rowSpacingM
-        : tableDepthM + Math.max(0.5, zone.config.rowSpacingM);
-  } else {
-    deltaU = physWidthM + Math.max(0.005, zone.config.colSpacingM);
-    deltaV = projectedDepthM + Math.max(0.005, zone.config.rowSpacingM);
-  }
-
-  const currentResult = generatePanelsForZone(zone);
-  const previousPanelCount = currentResult.panels.length;
-
-  let bestCount = previousPanelCount;
-  let bestX = zone.config.alignmentOffsetX;
-  let bestY = zone.config.alignmentOffsetY;
-
-  // Multi-phase sweep over [0, deltaU) x [0, deltaV)
-  const sweepSteps = Math.max(2, steps);
-  for (let i = 0; i < sweepSteps; i++) {
-    const offX = Number(((i / sweepSteps) * deltaU).toFixed(3));
-    for (let j = 0; j < sweepSteps; j++) {
-      const offY = Number(((j / sweepSteps) * deltaV).toFixed(3));
-
-      const testZone: ArrayZone = {
-        ...zone,
-        config: {
-          ...zone.config,
-          alignmentOffsetX: offX,
-          alignmentOffsetY: offY
-        }
-      };
-
-      const res = generatePanelsForZone(testZone);
-      if (res.panels.length > bestCount) {
-        bestCount = res.panels.length;
-        bestX = offX;
-        bestY = offY;
-      }
-    }
-  }
-
-  return {
-    optimalOffsetX: bestX,
-    optimalOffsetY: bestY,
-    maxPanelCount: bestCount,
-    previousPanelCount
-  };
-}
-
-/**
- * Calculates theoretical electrical string length limits (min/max modules per string)
- * for a given module and inverter specification under extreme temperature conditions.
- */
-export function calculateStringLimits(
-  module: ModuleModel,
-  inverter: InverterConfig,
-  minTempC: number = -10,
-  maxTempC: number = 70
-): {
-  minPanelsPerString: number;
-  maxPanelsPerString: number;
-  optimalPanelsPerString: number;
-  maxColdVoc: number;
-  minHotVmp: number;
-} {
-  // Cold Voc increase: Voc_cold = Voc * [1 + (Tmin - 25) * tempCoeffVoc]
-  const vocCoeffFraction = (module.tempCoeffVoc || -0.28) / 100.0;
-  const coldVocPerPanel = module.voc * (1.0 + (minTempC - 25.0) * vocCoeffFraction);
-  const maxColdVoc = Number(coldVocPerPanel.toFixed(2));
-
-  // Max panels per string so that String_Voc_cold <= Inverter max DC voltage
-  const maxPanels = Math.floor(inverter.maxDcVoltage / coldVocPerPanel);
-
-  // Hot Vmp decrease: Vmp_hot = Vmp * [1 + (Tmax - 25) * tempCoeffVoc]
-  const hotVmpPerPanel = module.vmp * (1.0 + (maxTempC - 25.0) * vocCoeffFraction);
-  const minHotVmp = Number(hotVmpPerPanel.toFixed(2));
-
-  // Min panels per string so that String_Vmp_hot >= Inverter min MPPT voltage
-  const minPanels = Math.ceil(inverter.minMpptVoltage / hotVmpPerPanel);
-
-  const safeMin = Math.max(1, minPanels);
-  const safeMax = Math.max(safeMin, maxPanels);
-
-  // Optimal string size in the upper-mid range for high inverter efficiency
-  const target = Math.round(safeMin + (safeMax - safeMin) * 0.85);
-  const optimalPanels = Math.min(safeMax, Math.max(safeMin, target));
-
-  return {
-    minPanelsPerString: safeMin,
-    maxPanelsPerString: safeMax,
-    optimalPanelsPerString: optimalPanels,
-    maxColdVoc,
-    minHotVmp
-  };
-}
-
-/**
- * Calculates recommended ground mount row-to-row spacing based on tilt angle and latitude
- * to avoid winter solstice inter-row shading (9:00 AM - 3:00 PM).
- */
-export function calculateRecommendedRowSpacing(
-  tiltDeg: number,
-  panelLengthM: number,
-  latitudeDeg: number = 37.0
-): number {
-  const tiltRad = (tiltDeg * Math.PI) / 180.0;
-  const panelHeight = panelLengthM * Math.sin(tiltRad);
-
-  // Approximate winter solstice noon solar altitude: alpha = 90 - abs(lat) - 23.45
-  const sunElevationDeg = Math.max(15, 90 - Math.abs(latitudeDeg) - 23.45);
-  const sunElevationRad = (sunElevationDeg * Math.PI) / 180.0;
-
-  // Inter-row pitch gap to clear shadow
-  const shadowLength = panelHeight / Math.tan(sunElevationRad);
-  return Math.round(shadowLength * 100) / 100;
 }
